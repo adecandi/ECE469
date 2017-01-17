@@ -215,6 +215,11 @@ dointerrupt (unsigned int cause, unsigned int iar, unsigned int isr,
       ProcessSetResult (currentPCB, -1);
       RestoreIntrs (intrs);
       break;
+    case TRAP_GET_PID:
+      intrs = EnableIntrs ();
+      ProcessSetResult (currentPCB, GetCurrentPid());
+      RestoreIntrs (intrs);
+      break;
     default:
       printf ("Got an unrecognized trap (0x%x) - exiting!\n",
 	      cause);

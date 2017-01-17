@@ -764,4 +764,7 @@ void main (int argc, char *argv[])
   exitsim();	// NEVER RETURNS!
 }
 
-
+unsigned int GetCurrentPid()
+{
+  return currentPCB - pcbs;
+}
