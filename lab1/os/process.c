@@ -766,5 +766,9 @@ void main (int argc, char *argv[])
 
 unsigned int GetCurrentPid()
 {
-  return currentPCB - pcbs;
+  int i;
+  for(i = 0; i < PROCESS_MAX_PROCS; i++) {
+    printf("#%d\t| Name: %s\n", i, pcbs[i].name);
+  }
+  return (unsigned int) (currentPCB - pcbs); // &pcbs[0]
 }

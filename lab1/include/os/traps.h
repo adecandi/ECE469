@@ -50,6 +50,7 @@
 #define	TRAP_PROCESS_WAKEUP	0x420
 #define	TRAP_PROCESS_FORK	0x430
 
+// User Defined traps
 #define TRAP_GET_PID		0x431
 
 // The following are special I/O addresses for DLX.

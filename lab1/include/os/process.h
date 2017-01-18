@@ -68,6 +68,6 @@ extern void ProcessSleep ();
 extern void ProcessDestroy();
 
 // User Functions
-unsigned int GetCurrentPid();
+extern unsigned int GetCurrentPid();
 
 #endif	/* _process_h_ */
