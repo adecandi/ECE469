@@ -21,5 +21,5 @@ nzinger@purdue.edu
 	The sem_signal function increments the count of the semaphore and wakes up a process waiting on the semaphore. The function fails if the semaphore is not initialized and valid, it then returns 1. 
 
 (2 points) What is a handle and how is it used to access semaphores in DLXOS?
-	
+	A handle is a paramter (an integer) and it is used as an index to access semaphores in DLXOS.
 	
