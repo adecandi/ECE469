@@ -1,0 +1,25 @@
+Prelab 2
+adunker@purdue.edu
+nzinger@purdue.edu
+
+(2 points) How many semaphores are available in DLXOS?
+
+	32 semaphores are available according to synch.h
+
+(2 points) How many locks are available in DLXOS?
+
+	64 locks are available according to synch.h
+
+(2 points) How is a semaphore created in DLXOS?
+
+	The SemCreate function. It grabs a semaphore, initializes it and returns a handle to this semaphore.
+
+(2 points) Explain how sem_signal and sem_wait work.
+
+	The sem_wait function decrements the count of the semaphore and waits if the count is negative. The function fails if the semaphore is not initialized and valid, it then returns 1. 
+
+	The sem_signal function increments the count of the semaphore and wakes up a process waiting on the semaphore. The function fails if the semaphore is not initialized and valid, it then returns 1. 
+
+(2 points) What is a handle and how is it used to access semaphores in DLXOS?
+	
+	
