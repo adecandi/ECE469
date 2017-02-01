@@ -3,8 +3,8 @@
 
 typedef struct buffer {
 	char buffer[BUFFERSIZE];	// Buffer
-	int current;				// Current pointer
-	int end;					// End pointer
+	int head;					// head pointer
+	int tail;					// tail pointer
 
 } circ_buffer;
 
