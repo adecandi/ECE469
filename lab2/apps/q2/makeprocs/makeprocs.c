@@ -2,8 +2,7 @@
 #include "usertraps.h"
 #include "misc.h"
 
-#include "producer.h"
-#include "consumer.h"
+#include "prod_cons.h"
 
 void main (int argc, char *argv[])
 {

@@ -7,6 +7,7 @@
 void main (int argc, char *argv[])
 {
 
-
+	uint32 h_mem;            // Handle to the shared memory page
+	sem_t s_procs_completed; // Semaphore to signal the original process that we're done
 
 }

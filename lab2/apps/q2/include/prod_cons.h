@@ -2,9 +2,9 @@
 #define __USERPROG__
 
 typedef struct buffer {
-	char buffer[BUFFERSIZE];
-	int current;
-	int end;
+	char buffer[BUFFERSIZE];	// Buffer
+	int current;				// Current pointer
+	int end;					// End pointer
 
 } circ_buffer;
 
