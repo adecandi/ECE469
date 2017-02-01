@@ -2,7 +2,7 @@
 #include "usertraps.h"
 #include "misc.h"
 
-#include "prod_con.h"
+#include "prod_cons.h"
 
 void main (int argc, char *argv[]) 
 {
@@ -23,7 +23,7 @@ void main (int argc, char *argv[])
 	// Convert the command-line strings into integers for use as handles
 	h_mem = dstrtol(argv[1], NULL, 10); 				// The "10" means base 10
 	s_procs_completed = dstrtol(argv[2], NULL, 10);		// Paged mapped semaphore
-	lock_t = dstrol(argv[3], NULL, 10);					// Lock
+	buff_lock = dstrtol(argv[3], NULL, 10);					// Lock
 
 	// Map shared memory page into this process's memory space
 	if ((buffer1 = (circ_buffer *)shmat(h_mem)) == NULL) {
@@ -32,15 +32,21 @@ void main (int argc, char *argv[])
 	}
 
 	while( i < dstrlen(str)) {
-		
-		
-		if (! (buffer1->head + 1) % BUFFER_SIZE == buffer1->tail) {
+		// Acquire the lock for the producer
+		if(lock_acquire(buff_lock) != SYNC_SUCCESS) {
+			Exit();
+		}
+		// Add a character to the buffer
+		if (!(buffer1->head + 1) % BUFFERSIZE == buffer1->tail) {
 			printf("Producer X inserted: %c", str[i]);
 			i++;
-			buffer1->tail++;
+			buffer1->tail = (buffer1->tail + 1) % BUFFERSIZE;
+		} 
+		// Release the lock after a character has been added
+		if (lock_release(buff_lock) != SYNC_SUCCESS ) {
+			Exit();
 		}
 	}
-
 
 	// Signal the semaphore to tell the original process that we're done
 	Printf("producer: PID %d is complete.\n", getpid());
