@@ -33,12 +33,19 @@ void main (int argc, char *argv[])
 
 	while( i < dstrlen(str)) {
 		
-		
-		if (! (buffer1->head + 1) % BUFFERSIZE == buffer1->tail) {
-			printf("Producer X inserted: %c", str[i]);
-			i++;
-			buffer1->tail++;
+		if(lock_acquire(buff_lock) != SYNC_SUCCESS) {
+			Exit();
 		}
+		if (! (head == tail)) {
+		  printf("Consumer %d inserted: %c",getpid() buffer[buffer->head]);
+			i++;
+			buffer1->head = (buffer1->head + 1) % BUFFERSIZE;
+		}   
+		if (lock_release(buff_lock) != SYNC_SUCCESS ) {
+			Exit();
+		}
+
+		
 	}
 
 
