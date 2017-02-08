@@ -13,6 +13,7 @@ void main (int argc, char *argv[])
 
 	int i = 0; // index for str[]
 	char str[] = "Hello World";
+	int length = dstrlen(str);
 
 	// Check for correct number of arguments
 	if (argc != 4) { 
@@ -30,20 +31,25 @@ void main (int argc, char *argv[])
 		Printf("Could not map the virtual address to the memory in "); Printf(argv[0]); Printf(", exiting...\n");
 		Exit();
 	}
-
-	while( i < dstrlen(str)) {
+	while( i < length) {
 		// Acquire the lock for the producer
 		if(lock_acquire(buff_lock) != SYNC_SUCCESS) {
+			Printf("Lock not acquired.\n");
 			Exit();
 		}
 		// Add a character to the buffer
-		if (!(buffer1->head + 1) % BUFFERSIZE == buffer1->tail) {
-			printf("Producer X inserted: %c", str[i]);
-			i++;
-			buffer1->tail = (buffer1->tail + 1) % BUFFERSIZE;
-		} 
+		if (((buffer1->head + 1) % BUFFERSIZE) == buffer1->tail) {
+			// Buffer is full
+		} else {
+			// Buffer is not full
+			Printf("Producer %d inserted: %c\n", getpid(), str[i]);
+			buffer1->buffer[buffer1->head] = str[i];
+			buffer1->head = (buffer1->head + 1) % BUFFERSIZE;
+			i = i + 1;
+		}
 		// Release the lock after a character has been added
 		if (lock_release(buff_lock) != SYNC_SUCCESS ) {
+			Printf("Lock not released.\n");
 			Exit();
 		}
 	}

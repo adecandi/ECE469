@@ -36,21 +36,18 @@ void main (int argc, char *argv[])
 		if(lock_acquire(buff_lock) != SYNC_SUCCESS) {
 			Exit();
 		}
-		if (! (head == tail)) {
-		  printf("Consumer %d inserted: %c",getpid() buffer[buffer->head]);
+		if (buffer1->head != buffer1->tail) {
+			Printf("Consumer %d removed: %c\n",getpid(), buffer1->buffer[buffer1->tail]);
 			i++;
-			buffer1->head = (buffer1->head + 1) % BUFFERSIZE;
+			buffer1->tail = (buffer1->tail + 1) % BUFFERSIZE;
 		}   
 		if (lock_release(buff_lock) != SYNC_SUCCESS ) {
 			Exit();
 		}
-
-		
 	}
 
-
 	// Signal the semaphore to tell the original process that we're done
-	Printf("producer: PID %d is complete.\n", getpid());
+	Printf("consumer: PID %d is complete.\n", getpid());
 	if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
 		Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");
 		Exit();

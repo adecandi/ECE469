@@ -56,6 +56,11 @@ void main (int argc, char *argv[])
     Exit();
   }
 
+  if((buff_lock = lock_create()) == SYNC_SUCCESS) {
+    Printf("Bad lock_create in"); Printf(argv[0]); Printf("\n");
+    Exit();
+  }
+
   // Setup the command-line arguments for the new process.  We're going to
   // pass the handles to the shared memory page and the semaphore as strings
   // on the command line, so we must first convert them from ints to strings.
@@ -68,6 +73,7 @@ void main (int argc, char *argv[])
   // knows how many arguments you are sending.
   for(i=0; i<numprocs; i++) {
     process_create(FILE_PROD, h_mem_str, s_procs_completed_str, buff_lock_str, NULL);
+    process_create(FILE_CONS, h_mem_str, s_procs_completed_str, buff_lock_str, NULL);
     Printf("Process %d created\n", i);
   }
 
