@@ -329,6 +329,9 @@ cond_t CondCreate(lock_t lock) {
   cond_t cond;
   uint32 intrval;
 
+  if (locks[lock].inuse) {
+    return INVALID_COND;
+  }
   // grabbing a conditional variable should be an atomic operation
   intrval = DisableIntrs();
   for(cond=0; cond<MAX_CONDS; cond++) {
