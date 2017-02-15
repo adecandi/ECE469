@@ -39,8 +39,8 @@ void main (int argc, char *argv[])
 	for(i = 0; i < length; i++) {
 		// Acquire the lock for the producer
 		while(lock_acquire(buff_lock) != SYNC_SUCCESS);
-
 		while(buffer1->head == ((buffer1->tail + 1) % BUFFERSIZE)) {
+			// if full
 			cond_wait(c_full);
 		}
 		Printf("Producer %d inserted: %c\n", getpid(), str[i]);
