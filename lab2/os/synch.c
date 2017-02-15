@@ -329,19 +329,21 @@ cond_t CondCreate(lock_t lock) {
   cond_t cond;
   uint32 intrval;
 
-  if (locks[lock].inuse) {
-    return INVALID_COND;
+  if (locks[lock].inuse == 0) {
+    printf("FATAL ERROR: lock in use when creating conditional variable\n");
+    return SYNC_FAIL;
   }
   // grabbing a conditional variable should be an atomic operation
   intrval = DisableIntrs();
   for(cond=0; cond<MAX_CONDS; cond++) {
-    if(conds[cond].inuse==0) {
-      conds[cond].inuse=1;
+    if(conds[cond].inuse == 0) {
+      conds[cond].lock = lock;
+      conds[cond].inuse = 1;
       break;
     }
   }
   RestoreIntrs(intrval);
-  if(cond==MAX_CONDS) return SYNC_FAIL;
+  if(cond==MAX_CONDS) return INVALID_COND;
 
   if(CondInit(&conds[cond]) != SYNC_SUCCESS) return SYNC_FAIL;
   return cond;
@@ -393,18 +395,25 @@ int CondWait (Cond *cond) {
   if(!cond) return SYNC_FAIL;
 
   intrval = DisableIntrs();
-  dbprintf('I', "CondWait: Old interrupt value was 0x%x.\n", intrval);
-  dbprintf('s', "CondWait: Proc %d waiting on cond %d.\n", GetCurrentPid(), (int)(cond-conds));
-  if((l = AQueueAllocLink((void *)currentPCB)) == NULL) {
-    printf("FATAL ERROR: could not allocate link for condition variable queue in CondWait!\n");
+
+  dbprintf ('I', "CondWait: Old interrupt value was 0x%x.\n", intrval);
+  dbprintf ('s', "CondWait: Proc %d waiting on cond %d\n", GetCurrentPid(), (int)(cond-conds));
+  dbprintf ('s', "CondWait: putting process %d to sleep\n", GetCurrentPid());
+
+  if ((l = AQueueAllocLink((void *)currentPCB)) == NULL) {
+    printf("FATAL ERROR: could not allocate link for cond queue in CondWait!\n");
     exitsim();
   }
-  if(AQueueInsertLast(&cond->waiting, l) != QUEUE_SUCCESS) {
-    printf("FATAL ERROR: could not insert new link into condition variable waiting queue in CondWait!\n");
+
+  if (AQueueInsertLast (&cond->waiting, l) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not insert new link into cond waiting queue in CondWait!\n");
     exitsim();
   }
-  ProcessSleep();
+
+  LockHandleRelease(cond->lock);
   RestoreIntrs(intrval);
+  ProcessSleep();
+  LockHandleAcquire(cond->lock);
   return SYNC_SUCCESS;
 }
 
@@ -432,6 +441,7 @@ int CondHandleSignal(cond_t c) {
   if (c < 0) return SYNC_FAIL;
   if (c >= MAX_CONDS) return SYNC_FAIL;
   if (!conds[c].inuse) return SYNC_FAIL;
+  if (!locks[conds[c].lock].inuse || locks[conds[c].lock].pid != GetCurrentPid()) return SYNC_FAIL;
   return CondSignal(&conds[c]);
 }
 
@@ -443,6 +453,9 @@ int CondSignal (Cond *cond) {
   if (!cond) return SYNC_FAIL;
 
   intrs = DisableIntrs();
+
+  dbprintf('s', "CondSignal: Process %d signalling on cond %d\n", GetCurrentPid(), (int)(cond-conds));
+
   if(!AQueueEmpty(&cond->waiting)) {
     l = AQueueFirst(&cond->waiting);
     pcb = (PCB *)AQueueObject(l);
@@ -450,7 +463,7 @@ int CondSignal (Cond *cond) {
       printf("FATAL ERROR: could not remove link from condition variable queue in CondSignal\n");
       exitsim();
     }
-    dbprintf('s', "SemSignal: Waking up PID %d.\n", (int)(GetPidFromAddress(pcb)));
+    dbprintf('s', "CondSignal: Waking up PID %d.\n", (int)(GetPidFromAddress(pcb)));
     ProcessWakeup(pcb);
   }
   RestoreIntrs(intrs);

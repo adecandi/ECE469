@@ -12,9 +12,14 @@ void main (int argc, char *argv[])
   uint32 h_mem;                   // Used to hold handle to shared memory page
   sem_t s_procs_completed;        // Semaphore used to wait until all spawned processes have completed
   lock_t buff_lock;               // Lock for the buffer
+  cond_t c_full;
+  cond_t c_empty;
+
   char h_mem_str[10];             // Used as command-line argument to pass mem_handle to new processes
   char s_procs_completed_str[10]; // Used as command-line argument to pass page_mapped handle to new processes
   char buff_lock_str[10];         // Used as command-line argument to pass lock to the new processes
+  char c_full_str[10];            // arg for cond full
+  char c_empty_str[10];           // arg for cond empty
 
   if (argc != 2) {
     Printf("Usage: "); Printf(argv[0]); Printf(" <number of processes to create>\n");
@@ -56,8 +61,18 @@ void main (int argc, char *argv[])
     Exit();
   }
 
-  if((buff_lock = lock_create()) == SYNC_SUCCESS) {
+  if((buff_lock = lock_create()) == SYNC_FAIL) {
     Printf("Bad lock_create in"); Printf(argv[0]); Printf("\n");
+    Exit();
+  }
+
+  if ((c_full = cond_create(buff_lock)) == SYNC_FAIL) {
+    Printf("Bad cond_create in 1 "); Printf(argv[0]); Printf("\n");
+    Exit();
+  }
+
+  if ((c_empty = cond_create(buff_lock)) == SYNC_FAIL) {
+    Printf("Bad cond_create in 2 "); Printf(argv[0]); Printf("\n");
     Exit();
   }
 
@@ -67,13 +82,15 @@ void main (int argc, char *argv[])
   ditoa(h_mem, h_mem_str);
   ditoa(s_procs_completed, s_procs_completed_str);
   ditoa(buff_lock, buff_lock_str);
+  ditoa(c_full, c_full_str);
+  ditoa(c_empty, c_empty_str);
 
   // Now we can create the processes.  Note that you MUST end your call to
   // process_create with a NULL argument so that the operating system
   // knows how many arguments you are sending.
   for(i=0; i<numprocs; i++) {
-    process_create(FILE_PROD, h_mem_str, s_procs_completed_str, buff_lock_str, NULL);
-    process_create(FILE_CONS, h_mem_str, s_procs_completed_str, buff_lock_str, NULL);
+    process_create(FILE_PROD, h_mem_str, s_procs_completed_str, buff_lock_str, c_full_str, c_empty_str, NULL);
+    process_create(FILE_CONS, h_mem_str, s_procs_completed_str, buff_lock_str, c_full_str, c_empty_str, NULL);
     Printf("Process %d created\n", i);
   }
 

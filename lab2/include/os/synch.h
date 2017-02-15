@@ -58,7 +58,7 @@ int LockRelease(Lock *);
 typedef struct Cond {
   // Your code goes here
   Queue waiting;
-  Lock l;
+  lock_t lock;
   uint32 inuse;
 } Cond;
 
