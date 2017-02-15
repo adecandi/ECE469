@@ -44,7 +44,7 @@ void main (int argc, char *argv[])
 		while(buffer1->head == buffer1->tail) {
 			cond_wait(c_empty);
 		}
-		Printf("Consumer %d removed: %c\n", getpid(), buffer1->buffer[buffer1->head]);
+		Printf("Consumer %d removed: %c\n", getpid(), buffer1->buffer[buffer1->tail]);
 		buffer1->tail = (buffer1->tail + 1) % BUFFERSIZE;
 		cond_signal(c_full);
 		while(lock_release(buff_lock) != SYNC_SUCCESS);
