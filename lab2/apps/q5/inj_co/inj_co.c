@@ -16,15 +16,15 @@ void main (int argc, char *argv[])
 	num_co = dstrtol(argv[3], NULL, 10);				// number of co
 
 	while(num_co > 0) {
-		if(SemSignal(s_co) != SYNC_SUCCESS) {
+		if(sem_signal(s_co) != SYNC_SUCCESS) {
 			Printf("Bad semaphore in %d", s_co);
 			Exit();
 		}
 		num_co--;
-		Printf("PID: %d Created a CO molecule.", getpid());
+		Printf("PID: %d Created a CO molecule.\n", getpid());
 	}
 
-	Printf("Injecting CO: PID %d is complete.\n", getpid());
+	//Printf("Injecting CO: PID %d is complete.\n", getpid());
 	if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
 		Printf("Bad semaphore s_procs_completed (%d) in ", s_procs_completed); Printf(argv[0]); Printf(", exiting...\n");
 		Exit();
