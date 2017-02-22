@@ -5,6 +5,9 @@
 #include "queue.h"
 #include "mbox.h"
 
+static mbox mbox_structs[MBOX_NUM_MBOXES];
+static mbox_messages mbox_mess_structs[MBOX_NUM_BUFFERS];
+
 //-------------------------------------------------------
 //
 // void MboxModuleInit();
@@ -19,6 +22,16 @@
 //-------------------------------------------------------
 
 void MboxModuleInit() {
+	int i, j;
+	for(i = 0; i < MBOX_NUM_MBOXES; i++) {
+		mbox_structs[i].inuse = 0;
+		mbox_structs[i].used = 0;
+		mbox_structs[i].count = 0;
+		for(j = 0; j < PROCESS_MAX_PROCS; j++) {
+			mbox_structs[i].pids[j] = 0;
+		}
+	}
+
 }
 
 //-------------------------------------------------------
@@ -32,7 +45,37 @@ void MboxModuleInit() {
 //
 //-------------------------------------------------------
 mbox_t MboxCreate() {
-  return MBOX_FAIL;
+	mbox_t available = 0;
+	while(mbox_structs[available].inuse = 1) { 
+		available++;
+		if(available > MBOX_NUM_MBOXES - 1) {
+			return MBOX_FAIL;
+		}
+	}
+
+	mbox_structs[available].inuse = 1;
+
+	if((mbox_structs[available].l = lock_create()) == SYNC_FAIL) {
+		Printf("Bad lock_create in"); Printf(argv[0]); Printf("\n");
+    	Exit();
+	}
+
+	if((mbox_structs[available].moreSpace = cond_create(mbox_structs[available].l)) == SYNC_FAIL) {
+		Printf("Bad cond_create in"); Printf(argv[0]); Printf("\n");
+		Exit();
+	}
+
+	if((mbox_structs[available].moreData = cond_create(mbox_structs[available].l)) == SYNC_FAIL) {
+		Printf("Bad cond_create in"); Printf(argv[0]); Printf("\n");
+		Exit();
+	}
+
+	if(AQueueInit(mbox_structs[available].msg) != QUEUE_SUCCESS) {
+		Printf("FATAL ERROR: could not initialize message queue in MboxCreate");
+		Exit();
+	}
+  
+	return available;
 }
 
 //-------------------------------------------------------
@@ -50,7 +93,25 @@ mbox_t MboxCreate() {
 //
 //-------------------------------------------------------
 int MboxOpen(mbox_t handle) {
-  return MBOX_FAIL;
+	if(!handle) return MBOX_FAIL;
+	if(handle < 0) return MBOX_FAIL;
+	if(handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
+	if(mbox_structs[i].inuse == 0) return MBOX_FAIL;
+
+	if(lock_acquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		Printf("Lock unable to be acquired in MboxOpen in %d \n", GetCurrentPid());
+		Exit();
+	}
+
+	mbox_structs[handle].used++;
+	mbox_structs[handle].pids[getpid()] = 1;
+
+	if(lock_release(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		Printf("Lock unable to be released in MboxOpen in %d \n", GetCurrentPid());
+		Exit();
+	}
+	
+	return MBOX_SUCCESS;
 }
 
 //-------------------------------------------------------
@@ -67,7 +128,28 @@ int MboxOpen(mbox_t handle) {
 //
 //-------------------------------------------------------
 int MboxClose(mbox_t handle) {
-  return MBOX_FAIL;
+	if(!handle) return MBOX_FAIL;
+	if(handle < 0) return MBOX_FAIL;
+	if(handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
+	if(mbox_structs[i].inuse == 0) return MBOX_FAIL;
+
+	if(lock_acquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		Printf("Lock unable to be acquired in MboxOpen in %d \n", GetCurrentPid());
+		Exit();
+	}
+
+    mbox_structs[handle].used--;
+    mbox_structs[handle].pids[getpid()] = 0;
+
+    if (mbox_structs[i].used == 0) {
+    	mbox_structs[i].inuse = 0;
+    }
+
+    if(lock_release(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		Printf("Lock unable to be released in MboxOpen in %d \n", GetCurrentPid());
+		Exit();
+	}
+    return MBOX_SUCCESS;
 }
 
 //-------------------------------------------------------
@@ -87,7 +169,25 @@ int MboxClose(mbox_t handle) {
 //
 //-------------------------------------------------------
 int MboxSend(mbox_t handle, int length, void* message) {
-  return MBOX_FAIL;
+	if (length <= 0) return MBOX_FAIL;
+	if(!handle) return MBOX_FAIL;
+	if(handle < 0) return MBOX_FAIL;
+	if(handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
+	if(mbox_structs[i].inuse == 0) return MBOX_FAIL;
+	if(length > MBOX_MAX_MESSAGE_LENGTH) return MBOX_FAIL;
+	if(mbox_structs[handle].pids[GetCurrentPid()] == 0) return MBOX_FAIL;
+
+
+	int available = 0;
+	while(mbox_mess_structs[available].inuse = 1) { 
+		available++;
+		if(available > MBOX_NUM_BUFFERS - 1) {
+			return MBOX_FAIL;
+		}
+	}
+
+
+
 }
 
 //-------------------------------------------------------

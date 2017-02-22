@@ -14,9 +14,22 @@
 //--------------------------------------------
 
 typedef struct mbox_message {
+	char message[MBOX_MAX_MESSAGE_LENGTH];
+	int msize;
+	uint32 inuse;
 } mbox_message;
 
 typedef struct mbox {
+ 	uint32 inuse;
+ 	int pids[PROCESS_MAX_PROCS]; 	
+ 	int used;								// A counter (used) to track number of processes that have opened the mailbox 
+ 	int count;								// A counter (count) to track number of variable length, queued messages 
+ 	Queue msg;
+	// Synchronization Variables
+ 	//A lock (l) and two condition variables (moreSpace and moreData) for producers and consumers to wait on 
+ 	lock_t l;								// lock for the mbox
+ 	cond_t moreSpace;						// moreSpace: producer’s message doesn’t fit it waits on moreSpace 
+ 	cond_t moreData;						// moreData: consumer finds no messages it waits on moreData
 } mbox;
 
 typedef int mbox_t; // This is the "type" of mailbox handles
