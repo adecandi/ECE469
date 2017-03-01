@@ -32,6 +32,10 @@ void MboxModuleInit() {
 		}
 	}
 
+	for (i = 0; i < MBOX_NUM_BUFFERS; i++) {
+		mbox_mess_structs[i].inuse = 0;
+	}
+
 }
 
 //-------------------------------------------------------
@@ -126,7 +130,6 @@ int MboxOpen(mbox_t handle) {
 // Returns MBOX_FAIL on failure.
 // Returns MBOX_SUCCESS on success.
 //
-//-------------------------------------------------------
 int MboxClose(mbox_t handle) {
 	if(!handle) return MBOX_FAIL;
 	if(handle < 0) return MBOX_FAIL;
@@ -173,10 +176,20 @@ int MboxSend(mbox_t handle, int length, void* message) {
 	if(!handle) return MBOX_FAIL;
 	if(handle < 0) return MBOX_FAIL;
 	if(handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
-	if(mbox_structs[i].inuse == 0) return MBOX_FAIL;
+	if(mbox_structs[handle].inuse == 0) return MBOX_FAIL;
 	if(length > MBOX_MAX_MESSAGE_LENGTH) return MBOX_FAIL;
 	if(mbox_structs[handle].pids[GetCurrentPid()] == 0) return MBOX_FAIL;
 
+	//Check for space in mailbox:
+	//Possibly use semaphores instead!!
+	if(CondHandleWait(mbox_structs[handle].moreSpace) == SYNC_FAIL) {
+		Printf("Bad cond handle wait in mbox send\n");
+	}
+
+	//Lock:
+	if (lock_acquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		Printf("Lock unable to be acquired in MboxSend in %d \n", GetCurrentPid());
+	}
 
 	int available = 0;
 	while(mbox_mess_structs[available].inuse = 1) { 
@@ -185,6 +198,12 @@ int MboxSend(mbox_t handle, int length, void* message) {
 			return MBOX_FAIL;
 		}
 	}
+	
+	mbox_mess_structs[available].inuse = 1;
+	mbox_mess_structs[available].message = (char *) message;
+	mbox_mess_structs[available].msize = length;
+
+
 
 
 
