@@ -3,3 +3,6 @@ bin/
 vm
 lib/
 *.depend
+*.h~
+*.c~
+*.c#
