@@ -6,7 +6,7 @@
 #include "mbox.h"
 
 static mbox mbox_structs[MBOX_NUM_MBOXES];
-static mbox_messages mbox_mess_structs[MBOX_NUM_BUFFERS];
+static mbox_message mbox_mess_structs[MBOX_NUM_BUFFERS];
 
 //-------------------------------------------------------
 //
@@ -32,10 +32,6 @@ void MboxModuleInit() {
 		}
 	}
 
-	for (i = 0; i < MBOX_NUM_BUFFERS; i++) {
-		mbox_mess_structs[i].inuse = 0;
-	}
-
 }
 
 //-------------------------------------------------------
@@ -50,7 +46,7 @@ void MboxModuleInit() {
 //-------------------------------------------------------
 mbox_t MboxCreate() {
 	mbox_t available = 0;
-	while(mbox_structs[available].inuse = 1) { 
+	while(mbox_structs[available].inuse == 1) { 
 		available++;
 		if(available > MBOX_NUM_MBOXES - 1) {
 			return MBOX_FAIL;
@@ -59,24 +55,24 @@ mbox_t MboxCreate() {
 
 	mbox_structs[available].inuse = 1;
 
-	if((mbox_structs[available].l = lock_create()) == SYNC_FAIL) {
-		Printf("Bad lock_create in"); Printf(argv[0]); Printf("\n");
-    	Exit();
+	if((mbox_structs[available].l = LockCreate()) == SYNC_FAIL) {
+		printf("Bad LockCreate in MboxCreate\n");
+    	exitsim();
 	}
 
-	if((mbox_structs[available].moreSpace = cond_create(mbox_structs[available].l)) == SYNC_FAIL) {
-		Printf("Bad cond_create in"); Printf(argv[0]); Printf("\n");
-		Exit();
+	if((mbox_structs[available].s_empty = SemCreate(MBOX_MAX_BUFFERS_PER_MBOX-1)) == SYNC_FAIL) {
+		printf("Bad SemCreate in MboxCreate\n"); 
+		exitsim();
 	}
 
-	if((mbox_structs[available].moreData = cond_create(mbox_structs[available].l)) == SYNC_FAIL) {
-		Printf("Bad cond_create in"); Printf(argv[0]); Printf("\n");
-		Exit();
+	if((mbox_structs[available].s_full = SemCreate(0)) == SYNC_FAIL) {
+		printf("Bad SemCreate in MboxCreate\n");
+		exitsim();
 	}
 
-	if(AQueueInit(mbox_structs[available].msg) != QUEUE_SUCCESS) {
-		Printf("FATAL ERROR: could not initialize message queue in MboxCreate");
-		Exit();
+	if(AQueueInit(&mbox_structs[available].msg) != QUEUE_SUCCESS) {
+		printf("FATAL ERROR: could not initialize message queue in MboxCreate\n");
+		exitsim();
 	}
   
 	return available;
@@ -97,22 +93,23 @@ mbox_t MboxCreate() {
 //
 //-------------------------------------------------------
 int MboxOpen(mbox_t handle) {
-	if(!handle) return MBOX_FAIL;
 	if(handle < 0) return MBOX_FAIL;
 	if(handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
-	if(mbox_structs[i].inuse == 0) return MBOX_FAIL;
+	if(mbox_structs[handle].inuse == 0) return MBOX_FAIL;
 
-	if(lock_acquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
-		Printf("Lock unable to be acquired in MboxOpen in %d \n", GetCurrentPid());
-		Exit();
+
+
+	if(LockHandleAcquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be acquired in MboxOpen in %d \n", GetCurrentPid());
+		exitsim();
 	}
 
 	mbox_structs[handle].used++;
-	mbox_structs[handle].pids[getpid()] = 1;
+	mbox_structs[handle].pids[GetCurrentPid()] = 1;
 
-	if(lock_release(mbox_structs[handle].l) != SYNC_SUCCESS) {
-		Printf("Lock unable to be released in MboxOpen in %d \n", GetCurrentPid());
-		Exit();
+	if(LockHandleRelease(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be released in MboxOpen in %d \n", GetCurrentPid());
+		exitsim();
 	}
 	
 	return MBOX_SUCCESS;
@@ -130,27 +127,33 @@ int MboxOpen(mbox_t handle) {
 // Returns MBOX_FAIL on failure.
 // Returns MBOX_SUCCESS on success.
 //
+//-------------------------------------------------------
 int MboxClose(mbox_t handle) {
-	if(!handle) return MBOX_FAIL;
+	Link *l;
+
 	if(handle < 0) return MBOX_FAIL;
 	if(handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
-	if(mbox_structs[i].inuse == 0) return MBOX_FAIL;
+	if(mbox_structs[handle].inuse == 0) return MBOX_FAIL;
 
-	if(lock_acquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
-		Printf("Lock unable to be acquired in MboxOpen in %d \n", GetCurrentPid());
-		Exit();
+	if(LockHandleAcquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be acquired in MboxOpen in %d \n", GetCurrentPid());
+		exitsim();
 	}
 
     mbox_structs[handle].used--;
-    mbox_structs[handle].pids[getpid()] = 0;
+    mbox_structs[handle].pids[GetCurrentPid()] = 0;
 
-    if (mbox_structs[i].used == 0) {
-    	mbox_structs[i].inuse = 0;
+    if (mbox_structs[handle].used == 0) {
+    	while(!AQueueEmpty(&mbox_structs[handle].msg)) {
+    		l = AQueueFirst(&mbox_structs[handle].msg);
+    		AQueueRemove(&l);
+    	}
+    	mbox_structs[handle].inuse = 0;
     }
 
-    if(lock_release(mbox_structs[handle].l) != SYNC_SUCCESS) {
-		Printf("Lock unable to be released in MboxOpen in %d \n", GetCurrentPid());
-		Exit();
+    if(LockHandleRelease(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be released in MboxOpen in %d \n", GetCurrentPid());
+		exitsim();
 	}
     return MBOX_SUCCESS;
 }
@@ -172,41 +175,57 @@ int MboxClose(mbox_t handle) {
 //
 //-------------------------------------------------------
 int MboxSend(mbox_t handle, int length, void* message) {
+	int i;
+	Link *l;
+	int cpid = GetCurrentPid();
+
 	if (length <= 0) return MBOX_FAIL;
-	if(!handle) return MBOX_FAIL;
-	if(handle < 0) return MBOX_FAIL;
-	if(handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
-	if(mbox_structs[handle].inuse == 0) return MBOX_FAIL;
-	if(length > MBOX_MAX_MESSAGE_LENGTH) return MBOX_FAIL;
-	if(mbox_structs[handle].pids[GetCurrentPid()] == 0) return MBOX_FAIL;
+	if (handle < 0) return MBOX_FAIL;
+	if (handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
+	if (length > MBOX_MAX_MESSAGE_LENGTH) return MBOX_FAIL;
 
-	//Check for space in mailbox:
-	//Possibly use semaphores instead!!
-	if(CondHandleWait(mbox_structs[handle].moreSpace) == SYNC_FAIL) {
-		Printf("Bad cond handle wait in mbox send\n");
+	if(mbox_structs[handle].pids[cpid] == 0) {
+		return MBOX_FAIL;
 	}
 
-	//Lock:
-	if (lock_acquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
-		Printf("Lock unable to be acquired in MboxSend in %d \n", GetCurrentPid());
+	if(SemHandleWait(mbox_structs[handle].s_empty) == SYNC_FAIL) {
+		printf("Bad sem handle wait in MboxSend\n");
+		exitsim();
 	}
 
-	int available = 0;
-	while(mbox_mess_structs[available].inuse = 1) { 
-		available++;
-		if(available > MBOX_NUM_BUFFERS - 1) {
-			return MBOX_FAIL;
+	if(LockHandleAcquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be acquired in MboxSend in %d \n", GetCurrentPid());
+		exitsim();
+	}
+
+	for(i=0; i < MBOX_NUM_BUFFERS; i++) {
+		if(mbox_mess_structs[i].inuse == 0) {
+			mbox_mess_structs[i].inuse = 1;
+			break;
 		}
 	}
-	
-	mbox_mess_structs[available].inuse = 1;
-	mbox_mess_structs[available].message = (char *) message;
-	mbox_mess_structs[available].msize = length;
 
+	bcopy(message, mbox_mess_structs[i].message, length);
+	mbox_mess_structs[i].msize = length;
 
+	if ((l = AQueueAllocLink(&mbox_mess_structs[i])) == NULL) {
+		printf("ERROR: could not allocate link for message in MboxSend\n");
+		exitsim();
+	}
 
+	AQueueInsertLast(&mbox_structs[handle].msg, l);
 
+	if(LockHandleRelease(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be released in MboxSend in %d \n", GetCurrentPid());
+		exitsim();
+	}
 
+	if(SemHandleSignal(mbox_structs[handle].s_full) == SYNC_FAIL) {
+		printf("Bad sem signal wait in MboxSend\n");
+		exitsim();
+	}
+
+	return MBOX_SUCCESS;
 }
 
 //-------------------------------------------------------
@@ -226,7 +245,51 @@ int MboxSend(mbox_t handle, int length, void* message) {
 //
 //-------------------------------------------------------
 int MboxRecv(mbox_t handle, int maxlength, void* message) {
-  return MBOX_FAIL;
+	Link *l;
+	mbox_message *m;
+	int cpid = GetCurrentPid();
+
+	if (handle < 0) return MBOX_FAIL;
+	if (handle > MBOX_NUM_MBOXES) return MBOX_FAIL;
+	if (mbox_structs[handle].pids[cpid] == 0) {
+		return MBOX_FAIL;
+	}
+
+	if(SemHandleWait(mbox_structs[handle].s_full) == SYNC_FAIL) {
+		printf("Bad sem handle wait in MboxSend\n");
+		exitsim();
+	}
+
+	if(LockHandleAcquire(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be acquired in MboxRecv in %d \n", GetCurrentPid());
+		exitsim();
+	}
+
+	l = AQueueFirst(&mbox_structs[handle].msg);
+	m = (mbox_message *) l->object;
+
+	if(m->msize > maxlength) {
+		return MBOX_FAIL;
+	}
+
+	bcopy(m->message, message, m->msize);
+
+	m->inuse = 0;
+
+	AQueueRemove(&l);
+
+	if(LockHandleRelease(mbox_structs[handle].l) != SYNC_SUCCESS) {
+		printf("Lock unable to be released in MboxSend in %d \n", GetCurrentPid());
+		exitsim();
+	}
+
+	if(SemHandleSignal(mbox_structs[handle].s_empty) == SYNC_FAIL) {
+		printf("Bad sem signal wait in MboxSend\n");
+		exitsim();
+	}
+
+	return m->msize;
+
 }
 
 //--------------------------------------------------------------------------------
@@ -242,5 +305,34 @@ int MboxRecv(mbox_t handle, int maxlength, void* message) {
 //
 //--------------------------------------------------------------------------------
 int MboxCloseAllByPid(int pid) {
-  return MBOX_FAIL;
+	int i;
+	Link *l;
+	if (pid < 0) return MBOX_FAIL;
+	if (pid > MBOX_NUM_MBOXES) return MBOX_FAIL;
+
+	for(i=0; i < MBOX_NUM_MBOXES; i++) {
+		if (mbox_structs[i].pids[pid] == 1) {
+
+			if(LockHandleAcquire(mbox_structs[i].l) != SYNC_SUCCESS) {
+				printf("Lock unable to be acquired in MboxOpen in %d \n", GetCurrentPid());
+				exitsim();
+			}
+
+			mbox_structs[i].pids[pid] = 0;
+
+			if (mbox_structs[i].used == 0) {
+				while(!AQueueEmpty(&mbox_structs[i].msg)) {
+					l = AQueueFirst(&mbox_structs[i].msg);
+					AQueueRemove(&l);
+				}
+				mbox_structs[i].inuse = 0;
+			}
+
+			if(LockHandleRelease(mbox_structs[i].l) != SYNC_SUCCESS) {
+				printf("Lock unable to be released in MboxOpen in %d \n", GetCurrentPid());
+				exitsim();
+			}
+		}
+	}
+	return MBOX_SUCCESS;
 }

@@ -36,7 +36,7 @@ void main (int argc, char *argv[])
 
   // Put some values in the mc structure to send as a message
   mc.numprocs = numprocs;
-  mc.really_important_char = 'A';
+  mc.really_important_char = 'C';
 
   // Create semaphore to not exit this process until all other processes 
   // have signalled that they are complete.  To do this, we will initialize
