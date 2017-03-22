@@ -12,10 +12,10 @@
 #include "queue.h"
 
 // num_pages = size_of_memory / size_of_one_page
-static uint32 freemap[/*size*/];
+static int freemapmax = MEM_MAX_SIZE / MEM_PAGESIZE / 32;
+static uint32 freemap[freemapmax];
 static uint32 pagestart;
 static int nfreepages;
-static int freemapmax;
 
 //----------------------------------------------------------------------
 //
@@ -56,6 +56,27 @@ int MemoryGetSize() {
 //
 //----------------------------------------------------------------------
 void MemoryModuleInit() {
+  int i, j;
+  uint32 mask;
+  uint32 ospages = lastosaddress / MEM_PAGESIZE;
+
+  freemapmax = MEM_MAX_SIZE / MEM_PAGESIZE / 32;
+  nfreepages = nfreepages - ospages;
+  pagestart = ospages + 1;
+
+  for(i = 0; i < freemapmax; i++) {
+    freemap[i] = 0;
+    mask = 0x1;
+    if(ospages > 0) {
+      for(j = 0; j < 32; j++) {
+        if(ospages > 0) {
+          freemap[i] = freemap[i] | mask;
+          ospages--;
+        }
+        mask = mask << 1;
+      }
+    }
+  }
 }
 
 
@@ -68,6 +89,7 @@ void MemoryModuleInit() {
 //
 //----------------------------------------------------------------------
 uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
+
 }
 
 
