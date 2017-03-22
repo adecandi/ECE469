@@ -1,12 +1,12 @@
 //
-//	process.c
+//  process.c
 //
-//	This file defines routines for dealing with processes.  This
-//	includes the "main" routine for the OS, which creates a process
-//	for the initial thread of execution.  It also includes
-//	code to create and delete processes, as well as context switch
-//	code.  Note, however, that the actual context switching is
-//	done in assembly language elsewhere.
+//  This file defines routines for dealing with processes.  This
+//  includes the "main" routine for the OS, which creates a process
+//  for the initial thread of execution.  It also includes
+//  code to create and delete processes, as well as context switch
+//  code.  Note, however, that the actual context switching is
+//  done in assembly language elsewhere.
 
 #include "ostraps.h"
 #include "dlxos.h"
@@ -17,57 +17,66 @@
 #include "share_memory.h"
 #include "mbox.h"
 #include "clock.h"
+#include "queue.h"
 
 // Pointer to the current PCB.  This is used by the assembly language
 // routines for context switches.
-PCB		*currentPCB;
+PCB   *currentPCB;
 
 // List of free PCBs.
-static Queue	freepcbs;
+static Queue  freepcbs;
 
 // List of processes that are ready to run (ie, not waiting for something
 // to happen).
-static Queue	runQueue;
+static Queue runQueues[NUM_RUN_QUEUES];
 
 // List of processes that are waiting for something to happen.  There's no
 // reason why this must be a single list; there could be many lists for many
 // different conditions.
-static Queue	waitQueue;
+static Queue qWait;
+static Queue qSleep;
 
 // List of processes waiting to be deleted.  See below for a description of
 // the reason that we need a separate queue for processes about to die.
-static Queue	zombieQueue;
+static Queue  zombieQueue;
 
 // Static area for all process control blocks.  This is necessary because
 // we can't use malloc() inside the OS.
-static PCB	pcbs[PROCESS_MAX_PROCS];
+static PCB  pcbs[PROCESS_MAX_PROCS];
+
+// idle pcb
+static PCB* idlePCB;
+
+// Counter of quanta jiffies
+static int cntQuantaJ;
 
 // String listing debugging options to print out.
-char	debugstr[200];
+char  debugstr[200];
 
 int ProcessGetCodeInfo(const char *file, uint32 *startAddr, uint32 *codeStart, uint32 *codeSize,
                        uint32 *dataStart, uint32 *dataSize);
 int ProcessGetFromFile(int fd, unsigned char *buf, uint32 *addr, int max);
 uint32 get_argument(char *string);
 
-
 
 //----------------------------------------------------------------------
 //
-//	ProcessModuleInit
+//  ProcessModuleInit
 //
-//	Initialize the process module.  This involves initializing all
-//	of the process control blocks to appropriate values (ie, free
-//	and available).  We also need to initialize all of the queues.
+//  Initialize the process module.  This involves initializing all
+//  of the process control blocks to appropriate values (ie, free
+//  and available).  We also need to initialize all of the queues.
 //
 //----------------------------------------------------------------------
 void ProcessModuleInit () {
-  int		i;
-
+  int   i;
   dbprintf ('p', "ProcessModuleInit: function started\n");
   AQueueInit (&freepcbs);
-  AQueueInit(&runQueue);
-  AQueueInit (&waitQueue);
+  for(i = 0; i < NUM_RUN_QUEUES; i++) {
+    AQueueInit(&runQueues[i]);
+  }
+  AQueueInit (&qWait);
+  AQueueInit (&qSleep);
   AQueueInit (&zombieQueue);
   // For each PCB slot in the global pcbs array:
   for (i = 0; i < PROCESS_MAX_PROCS; i++) {
@@ -78,7 +87,11 @@ void ProcessModuleInit () {
       exitsim();
     }
     // Next, set the pcb to be available
+    pcbs[i].jResume = 0;
+    pcbs[i].jSleep = 0;
+    pcbs[i].jTotal = 0;
     pcbs[i].flags = PROCESS_STATUS_FREE;
+  
     // Finally, insert the link into the queue
     if (AQueueInsertFirst(&freepcbs, pcbs[i].l) != QUEUE_SUCCESS) {
       printf("FATAL ERROR: could not insert PCB link into queue in ProcessModuleInit!\n");
@@ -92,9 +105,9 @@ void ProcessModuleInit () {
 
 //----------------------------------------------------------------------
 //
-//	ProcessSetStatus
+//  ProcessSetStatus
 //
-//	Set the status of a process.
+//  Set the status of a process.
 //
 //----------------------------------------------------------------------
 void ProcessSetStatus (PCB *pcb, int status) {
@@ -104,10 +117,10 @@ void ProcessSetStatus (PCB *pcb, int status) {
 
 //----------------------------------------------------------------------
 //
-//	ProcessFreeResources
+//  ProcessFreeResources
 //
-//	Free the resources associated with a process.  This assumes the
-//	process isn't currently on any queue.
+//  Free the resources associated with a process.  This assumes the
+//  process isn't currently on any queue.
 //
 //----------------------------------------------------------------------
 void ProcessFreeResources (PCB *pcb) {
@@ -116,12 +129,11 @@ void ProcessFreeResources (PCB *pcb) {
 
   dbprintf ('p', "ProcessFreeResources: function started\n");
 
-
   //-----------------------------------------------------
   // Your code for closing any open mailbox connections
   // that a dying process might have goes here.
   //-----------------------------------------------------
-
+  MboxCloseAllByPid(GetPidFromAddress(pcb)); 
 
   // Allocate a new link for this pcb on the freepcbs queue
   if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
@@ -157,14 +169,14 @@ void ProcessFreeResources (PCB *pcb) {
 
 //----------------------------------------------------------------------
 //
-//	ProcessSetResult
+//  ProcessSetResult
 //
-//	Set the result returned to a process.  This is done by storing
-//	the value into the current register save area for r1.  When the
-//	context is restored, r1 will contain the return value.  This
-//	routine should only be called from a trap.  Calling it at other
-//	times (such as an interrupt handler) will cause unpredictable
-//	results.
+//  Set the result returned to a process.  This is done by storing
+//  the value into the current register save area for r1.  When the
+//  context is restored, r1 will contain the return value.  This
+//  routine should only be called from a trap.  Calling it at other
+//  times (such as an interrupt handler) will cause unpredictable
+//  results.
 //
 //----------------------------------------------------------------------
 void ProcessSetResult (PCB * pcb, uint32 result) {
@@ -174,39 +186,48 @@ void ProcessSetResult (PCB * pcb, uint32 result) {
 
 //----------------------------------------------------------------------
 //
-//	ProcessSchedule
+//  ProcessSchedule
 //
-//	Schedule the next process to run.  If there are no processes to
-//	run, exit.  This means that there should be an idle loop process
-//	if you want to allow the system to "run" when there's no real
-//	work to be done.
+//  Schedule the next process to run.  If there are no processes to
+//  run, exit.  This means that there should be an idle loop process
+//  if you want to allow the system to "run" when there's no real
+//  work to be done.
 //
-//	NOTE: the scheduler should only be called from a trap or interrupt
-//	handler.  This way, interrupts are disabled.  Also, it must be
-//	called consistently, and because it might be called from an interrupt
-//	handler (the timer interrupt), it must ALWAYS be called from a trap
-//	or interrupt handler.
+//  NOTE: the scheduler should only be called from a trap or interrupt
+//  handler.  This way, interrupts are disabled.  Also, it must be
+//  called consistently, and because it might be called from an interrupt
+//  handler (the timer interrupt), it must ALWAYS be called from a trap
+//  or interrupt handler.
 //
-//	Note that this procedure doesn't actually START the next process.
-//	It only changes the currentPCB and other variables so the next
-//	return from interrupt will restore a different context from that
-//	which was saved.
+//  Note that this procedure doesn't actually START the next process.
+//  It only changes the currentPCB and other variables so the next
+//  return from interrupt will restore a different context from that
+//  which was saved.
 //
 //----------------------------------------------------------------------
 void ProcessSchedule () {
   PCB *pcb=NULL;
   int i=0;
   Link *l=NULL;
+  int jProcs;
+  int intrs;
 
-  dbprintf ('p', "Now entering ProcessSchedule (cur=0x%x, %d ready)\n",
-	    (int)currentPCB, AQueueLength (&runQueue));
+  dbprintf ('p', "Now entering ProcessSchedule (cur=0x%x)\n", (int)currentPCB);
+
+  jProcs = ClkGetCurJiffies() - currentPCB->jResume;
+  currentPCB->jTotal += jProcs;
+  currentPCB->jResume = 0;
+  if(currentPCB->pinfo == 1) {
+    printf(PROCESS_CPUSTATS_FORMAT, GetCurrentPid(), currentPCB->jTotal, currentPCB->priority);
+  }
+
   // The OS exits if there's no runnable process.  This is a feature, not a
   // bug.  An easy solution to allowing no runnable "user" processes is to
   // have an "idle" process that's simply an infinite loop.
-  if (AQueueEmpty(&runQueue)) {
-    if (!AQueueEmpty(&waitQueue)) {
+  if (!runQueIdleProcChk() && !isEmptyqSleep()) {
+    if (!AQueueEmpty(&qWait)) {
       printf("FATAL ERROR: no runnable processes, but there are sleeping processes waiting!\n");
-      l = AQueueFirst(&waitQueue);
+      l = AQueueFirst(&qWait);
       while (l != NULL) {
         pcb = AQueueObject(l);
         printf("Sleeping process %d: ", i++); printf("PID = %d\n", (int)(pcb - pcbs));
@@ -215,17 +236,50 @@ void ProcessSchedule () {
       exitsim();
     }
     printf ("No runnable processes - exiting!\n");
-    exitsim ();	// NEVER RETURNS
+    exitsim (); // NEVER RETURNS
+  }
+  
+  intrs = DisableIntrs ();
+  // Move the front of the queue to the end.  The running process was the one in front.
+  if(currentPCB->flags & PROCESS_STATUS_RUNNABLE) {
+    // The round robin inside queue
+    Queue* q = &runQueues[WhichQueue(currentPCB)];
+    AQueueMoveAfter(q, AQueueLast(q), AQueueFirst(q)); // the round robin
+    if(jProcs >= PROCESS_QUANTUM_JIFFIES) {
+      currentPCB->estcpu += 1.0f;
+    }
+    ProcessRecalcPriority(currentPCB);
   }
 
-  // Move the front of the queue to the end.  The running process was the one in front.
-  AQueueMoveAfter(&runQueue, AQueueLast(&runQueue), AQueueFirst(&runQueue));
+  cntQuantaJ += jProcs;
+  if(cntQuantaJ >= CPU_WINDOWS_BETWEEN_DECAYS * PROCESS_QUANTUM_JIFFIES) { // 10 processes qunatas have passed
+    ProcessDecayAllEstcpus();
+    cntQuantaJ = 0; // reset
+  }
+  ProcessUserWakeup(); // wakeup any sleeping processes that needs to be udpated
+  ProcessFixRunQueues();
+  pcb = ProcessFindHighestPriorityPCB();
+  RestoreIntrs(intrs);
 
-  // Now, run the one at the head of the queue.
-  pcb = (PCB *)AQueueObject(AQueueFirst(&runQueue));
+  if (pcb == idlePCB) {
+    // move idle pcb to its proper place
+    pcb->priority = 127;
+    if (AQueueRemove(&(pcb->l)) != QUEUE_SUCCESS) {
+      printf("FATAL ERROR: could not remove process from run Queue in ProcessFixRunQueues!\n");
+      exitsim();
+    }
+    if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
+      printf("FATAL ERROR: could not get Queue Link in ProcessFixRunQueues!\n");
+      exitsim();
+    }
+    ProcessInsertRunning(pcb);
+    pcb = ProcessFindHighestPriorityPCB();
+  }
   currentPCB = pcb;
+  currentPCB->jResume = ClkGetCurJiffies();
+
   dbprintf ('p',"About to switch to PCB 0x%x,flags=0x%x @ 0x%x\n",
-	    (int)pcb, pcb->flags, (int)(pcb->sysStackPtr[PROCESS_STACK_IAR]));
+      (int)pcb, pcb->flags, (int)(pcb->sysStackPtr[PROCESS_STACK_IAR]));
 
   // Clean up zombie processes here.  This is done at interrupt time
   // because it can't be done while the process might still be running
@@ -243,13 +297,13 @@ void ProcessSchedule () {
 
 //----------------------------------------------------------------------
 //
-//	ProcessSuspend
+//  ProcessSuspend
 //
-//	Place a process in suspended animation until it's
-//	awakened by ProcessAwaken.
+//  Place a process in suspended animation until it's
+//  awakened by ProcessAwaken.
 //
-//	NOTE: This must only be called from an interrupt or trap.  It
-//	should be immediately followed by ProcessSchedule().
+//  NOTE: This must only be called from an interrupt or trap.  It
+//  should be immediately followed by ProcessSchedule().
 //
 //----------------------------------------------------------------------
 void ProcessSuspend (PCB *suspend) {
@@ -266,58 +320,63 @@ void ProcessSuspend (PCB *suspend) {
     printf("FATAL ERROR: could not get Queue Link in ProcessSuspend!\n");
     exitsim();
   }
-  if (AQueueInsertLast(&waitQueue, suspend->l) != QUEUE_SUCCESS) {
-    printf("FATAL ERROR: could not insert suspend PCB into waitQueue!\n");
+  if (AQueueInsertLast(&qWait, suspend->l) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not insert suspend PCB into qWait!\n");
     exitsim();
   }
+  suspend->jSleep = ClkGetCurJiffies();
   dbprintf ('p', "ProcessSuspend (%d): function complete\n", GetCurrentPid());
 }
 
 //----------------------------------------------------------------------
 //
-//	ProcessWakeup
+//  ProcessWakeup
 //
-//	Wake up a process from its slumber.  This only involves putting
-//	it on the run queue; it's not guaranteed to be the next one to
-//	run.
+//  Wake up a process from its slumber.  This only involves putting
+//  it on the run queue; it's not guaranteed to be the next one to
+//  run.
 //
-//	NOTE: This must only be called from an interrupt or trap.  It
-//	need not be followed immediately by ProcessSchedule() because
-//	the currently running process is unaffected.
+//  NOTE: This must only be called from an interrupt or trap.  It
+//  need not be followed immediately by ProcessSchedule() because
+//  the currently running process is unaffected.
 //
 //----------------------------------------------------------------------
 void ProcessWakeup (PCB *wakeup) {
+  int time_asleep_jiffies;
+  int intrs;
   dbprintf ('p',"Waking up PID %d.\n", (int)(wakeup - pcbs));
   // Make sure it's not yet a runnable process.
   ASSERT (wakeup->flags & PROCESS_STATUS_WAITING, "Trying to wake up a non-sleeping process!\n");
   ProcessSetStatus (wakeup, PROCESS_STATUS_RUNNABLE);
   if (AQueueRemove(&(wakeup->l)) != QUEUE_SUCCESS) {
-    printf("FATAL ERROR: could not remove wakeup PCB from waitQueue in ProcessWakeup!\n");
+    printf("FATAL ERROR: could not remove wakeup PCB from qWait in ProcessWakeup!\n");
     exitsim();
   }
   if ((wakeup->l = AQueueAllocLink(wakeup)) == NULL) {
-    printf("FATAL ERROR: could not get link for wakeup PCB in ProcessWakeup!\n");
+    printf("FATAL ERROR: could not get link for wakeup PCB in ProcessWakeup! \n");
     exitsim();
   }
-  if (AQueueInsertLast(&runQueue, wakeup->l) != QUEUE_SUCCESS) {
-    printf("FATAL ERROR: could not insert link into runQueue in ProcessWakeup!\n");
-    exitsim();
-  }
+  intrs = DisableIntrs();
+  time_asleep_jiffies = ClkGetCurJiffies() - wakeup->jSleep;
+  ProcessDecayEstcpuSleep(wakeup, time_asleep_jiffies);
+  ProcessRecalcPriority(wakeup);
+  ProcessInsertRunning(wakeup);
+  RestoreIntrs(intrs);
 }
 
 
 //----------------------------------------------------------------------
 //
-//	ProcessDestroy
+//  ProcessDestroy
 //
-//	Destroy a process by setting its status to zombie and putting it
-//	on the zombie queue.  The next time the scheduler is called, this
-//	process will be marked as free.  We can't necessarily do it now
-//	because we might be the currently running process.
+//  Destroy a process by setting its status to zombie and putting it
+//  on the zombie queue.  The next time the scheduler is called, this
+//  process will be marked as free.  We can't necessarily do it now
+//  because we might be the currently running process.
 //
-//	NOTE: This must only be called from an interrupt or trap.  However,
-//	it need not be followed immediately by a ProcessSchedule() because
-//	the process can continue running.
+//  NOTE: This must only be called from an interrupt or trap.  However,
+//  it need not be followed immediately by a ProcessSchedule() because
+//  the process can continue running.
 //
 //----------------------------------------------------------------------
 void ProcessDestroy (PCB *pcb) {
@@ -340,10 +399,10 @@ void ProcessDestroy (PCB *pcb) {
 
 //----------------------------------------------------------------------
 //
-//	ProcessExit
+//  ProcessExit
 //
-//	This routine is called to exit from a system process.  It simply
-//	calls an exit trap, which will be caught to exit the process.
+//  This routine is called to exit from a system process.  It simply
+//  calls an exit trap, which will be caught to exit the process.
 //
 //----------------------------------------------------------------------
 static void ProcessExit () {
@@ -353,26 +412,26 @@ static void ProcessExit () {
 
 //----------------------------------------------------------------------
 //
-//	ProcessFork
+//  ProcessFork
 //
-//	Create a new process and make it runnable.  This involves the
-//	following steps:
-//	* Allocate resources for the process (PCB, memory, etc.)
-//	* Initialize the resources
-//	* Place the PCB on the runnable queue
+//  Create a new process and make it runnable.  This involves the
+//  following steps:
+//  * Allocate resources for the process (PCB, memory, etc.)
+//  * Initialize the resources
+//  * Place the PCB on the runnable queue
 //
-//	NOTE: This code has been tested for system processes, but not
-//	for user processes.
+//  NOTE: This code has been tested for system processes, but not
+//  for user processes.
 //
 //----------------------------------------------------------------------
 int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, int isUser) {
-  int		fd, n;
-  int		start, codeS, codeL, dataS, dataL;
-  uint32	*stackframe;
-  int		newPage;
-  PCB		*pcb;
-  int	addr = 0;
-  int		intrs;
+  int   fd, n;
+  int   start, codeS, codeL, dataS, dataL;
+  uint32  *stackframe;
+  int   newPage;
+  PCB   *pcb;
+  int addr = 0;
+  int   intrs;
   unsigned char buf[100];
   uint32 dum[MAX_ARGS+8], count, offset;
   char *str;
@@ -381,11 +440,11 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
   intrs = DisableIntrs ();
   dbprintf ('I', "Old interrupt value was 0x%x.\n", intrs);
   dbprintf ('p', "Entering ProcessFork args=0x%x 0x%x %s %d\n", (int)func,
-	    param, name, isUser);
+      param, name, isUser);
   // Get a free PCB for the new process
   if (AQueueEmpty(&freepcbs)) {
     printf ("FATAL error: no free processes!\n");
-    exitsim ();	// NEVER RETURNS!
+    exitsim (); // NEVER RETURNS!
   }
   pcb = (PCB *)AQueueObject(AQueueFirst (&freepcbs));
   dbprintf ('p', "Got a link @ 0x%x\n", (int)(pcb->l));
@@ -407,6 +466,9 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
   dbprintf('p', "ProcessFork: Copying process name (%s) to pcb\n", name);
   dstrcpy(pcb->name, name);
 
+  pcb->pnice = pnice;
+  pcb->pinfo = pinfo;
+
   //----------------------------------------------------------------------
   // This section initializes the memory for this process
   //----------------------------------------------------------------------
@@ -418,13 +480,13 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
   newPage = MemoryAllocPage ();
   if (newPage == 0) {
     printf ("aFATAL: couldn't allocate memory - no free pages!\n");
-    exitsim ();	// NEVER RETURNS!
+    exitsim (); // NEVER RETURNS!
   }
   pcb->pagetable[0] = MemorySetupPte (newPage);
   newPage = MemoryAllocPage ();
   if (newPage == 0) {
     printf ("bFATAL: couldn't allocate system stack - no free pages!\n");
-    exitsim ();	// NEVER RETURNS!
+    exitsim (); // NEVER RETURNS!
   }
   pcb->sysStackArea = newPage * MEMORY_PAGE_SIZE;
 
@@ -441,9 +503,9 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
   pcb->currentSavedFrame = stackframe;
 
   dbprintf ('p',
-	    "Setting up PCB @ 0x%x (sys stack=0x%x, mem=0x%x, size=0x%x)\n",
-	    (int)pcb, pcb->sysStackArea, pcb->pagetable[0],
-	    pcb->npages * MEMORY_PAGE_SIZE);
+      "Setting up PCB @ 0x%x (sys stack=0x%x, mem=0x%x, size=0x%x)\n",
+      (int)pcb, pcb->sysStackArea, pcb->pagetable[0],
+      pcb->npages * MEMORY_PAGE_SIZE);
 
   //----------------------------------------------------------------------
   // This section sets up the stack frame for the process.  This is done
@@ -471,7 +533,7 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
   // This can be changed on a per-process basis if desired.  For now,
   // though, it's fixed.
   stackframe[PROCESS_STACK_PTBITS] = (MEMORY_L1_PAGE_SIZE_BITS
-					  + (MEMORY_L2_PAGE_SIZE_BITS << 16));
+            + (MEMORY_L2_PAGE_SIZE_BITS << 16));
 
 
   if (isUser) {
@@ -484,9 +546,9 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
     }
     dbprintf ('p', "File %s -> start=0x%08x\n", name, start);
     dbprintf ('p', "File %s -> code @ 0x%08x (size=0x%08x)\n", name, codeS,
-	      codeL);
+        codeL);
     dbprintf ('p', "File %s -> data @ 0x%08x (size=0x%08x)\n", name, dataS,
-	      dataL);
+        dataL);
     while ((n = ProcessGetFromFile (fd, buf, &addr, sizeof (buf))) > 0) {
       dbprintf ('p', "Placing %d bytes at vaddr %08x.\n", n, addr - n);
       // Copy the data to user memory.  Note that the user memory needs to
@@ -502,8 +564,8 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
     stackframe[PROCESS_STACK_IREG+29] = MEMORY_PAGE_SIZE - SIZE_ARG_BUFF;
     // Copy the initial parameter to the top of stack
     MemoryCopySystemToUser (pcb, (char *)str,
-			    (char *)stackframe[PROCESS_STACK_IREG+29],
-			    SIZE_ARG_BUFF-32);
+          (char *)stackframe[PROCESS_STACK_IREG+29],
+          SIZE_ARG_BUFF-32);
     offset = get_argument((char *)param);
 
     dum[2] = MEMORY_PAGE_SIZE - SIZE_ARG_BUFF + offset; 
@@ -519,12 +581,16 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
     dum[0] = count-2;
     dum[1] = MEMORY_PAGE_SIZE - SIZE_ARG_BUFF - (count-2)*4;
     MemoryCopySystemToUser (pcb, (char *)dum,
-			    (char *)(stackframe[PROCESS_STACK_IREG+29]-count*4),
-			    (count)*sizeof(uint32));
+          (char *)(stackframe[PROCESS_STACK_IREG+29]-count*4),
+          (count)*sizeof(uint32));
     stackframe[PROCESS_STACK_IREG+29] -= 4*count;
     // Set the correct address at which to execute a user process.
     stackframe[PROCESS_STACK_IAR] = (uint32)start;
     pcb->flags |= PROCESS_TYPE_USER;
+
+    // Priority
+    pcb->priority = USER_PROCESS_BASE_PRIORITY + 2 * pnice;
+    pcb->estcpu = 0.0;
   } else {
     // Set r31 to ProcessExit().  This will only be called for a system
     // process; user processes do an exit() trap.
@@ -546,6 +612,15 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
 
     // Mark this as a system process.
     pcb->flags |= PROCESS_TYPE_SYSTEM;
+    
+    // Priority
+    if(func == ProcessIdle) {
+      pcb->priority = 127;
+    }
+    else {
+      pcb->priority = KERNEL_PROCESS_BASE_PRIORITY + 2 * pnice;
+    }
+    pcb->estcpu = 0.0;
   }
 
   // Place PCB onto run queue
@@ -554,10 +629,7 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
     printf("FATAL ERROR: could not get link for forked PCB in ProcessFork!\n");
     exitsim();
   }
-  if (AQueueInsertLast(&runQueue, pcb->l) != QUEUE_SUCCESS) {
-    printf("FATAL ERROR: could not insert link into runQueue in ProcessFork!\n");
-    exitsim();
-  }
+  ProcessInsertRunning(pcb);
   RestoreIntrs (intrs);
 
   // If this is the first process, make it the current one
@@ -576,9 +648,9 @@ int ProcessFork (VoidFunc func, uint32 param, int pnice, int pinfo,char *name, i
 
 //----------------------------------------------------------------------
 //
-//	getxvalue
+//  getxvalue
 //
-//	Convert a hex digit into an actual value.
+//  Convert a hex digit into an actual value.
 //
 //----------------------------------------------------------------------
 static
@@ -599,34 +671,34 @@ getxvalue (int x)
 
 //----------------------------------------------------------------------
 //
-//	ProcessGetCodeSizes
+//  ProcessGetCodeSizes
 //
-//	Get the code sizes (stack & data) for a file.  A file descriptor
-//	for the named file is returned.  This descriptor MUST be closed
-//	(presumably by the caller) at some point.
+//  Get the code sizes (stack & data) for a file.  A file descriptor
+//  for the named file is returned.  This descriptor MUST be closed
+//  (presumably by the caller) at some point.
 //
 //----------------------------------------------------------------------
 int
 ProcessGetCodeInfo (const char *file, uint32 *startAddr,
-		    uint32 *codeStart, uint32 *codeSize,
-		     uint32 *dataStart, uint32 *dataSize)
+        uint32 *codeStart, uint32 *codeSize,
+         uint32 *dataStart, uint32 *dataSize)
 {
-  int		fd;
-  int		totalsize;
-  char		buf[100];
-  char		*pos;
+  int   fd;
+  int   totalsize;
+  char    buf[100];
+  char    *pos;
 
   // Open the file for reading.  If it returns a negative number, the open
   // didn't work.
   if ((fd = FsOpen (file, FS_MODE_READ)) < 0) {
     dbprintf ('f', "ProcessGetCodeInfo: open of %s failed (%d).\n",
-	      file, fd);
+        file, fd);
     return (-1);
   }
   dbprintf ('f', "File descriptor is now %d.\n", fd);
   if ((totalsize = FsRead (fd, buf, sizeof (buf))) != sizeof (buf)) {
     dbprintf ('f', "ProcessGetCodeInfo: read got %d (not %d) bytes from %s\n",
-	      totalsize, (int)sizeof (buf), file);
+        totalsize, (int)sizeof (buf), file);
     FsClose (fd);
     return (-1);
   }
@@ -651,38 +723,38 @@ ProcessGetCodeInfo (const char *file, uint32 *startAddr,
 
 //----------------------------------------------------------------------
 //
-//	ProcessGetFromFile
+//  ProcessGetFromFile
 //
-//	Inputs:
-//	addr -	points to an integer that contains the address of
-//		the byte past that previously returned.  If this is the
-//		first call to this routine, *addr should be set to 0.
-//	fd -	File descriptor from which to read data.  The file format
-//		is the same as that used by the DLX simulator.
-//	buf -	points to a buffer that will receive data from the input
-//		file.  Note that the data is NOT 0-terminated, and may
-//		include any number of 0 bytes.
-//	max -	maximum length of data to return.  The routine collects data
-//		until either the address changes or it has read max bytes.
+//  Inputs:
+//  addr -  points to an integer that contains the address of
+//    the byte past that previously returned.  If this is the
+//    first call to this routine, *addr should be set to 0.
+//  fd -  File descriptor from which to read data.  The file format
+//    is the same as that used by the DLX simulator.
+//  buf - points to a buffer that will receive data from the input
+//    file.  Note that the data is NOT 0-terminated, and may
+//    include any number of 0 bytes.
+//  max - maximum length of data to return.  The routine collects data
+//    until either the address changes or it has read max bytes.
 //
-//	Returns the number of bytes actually stored into buf.  In addition,
-//	*addr is updated to point to the byte following the last byte in
-//	the buffer.
+//  Returns the number of bytes actually stored into buf.  In addition,
+//  *addr is updated to point to the byte following the last byte in
+//  the buffer.
 //
-//	Load a file into memory.  The file format consists of a
-//	leading address, followed by a colon, followed by the data
-//	to go at that address.  If the address is omitted, the data
-//	follows that from the previous line of the file.
+//  Load a file into memory.  The file format consists of a
+//  leading address, followed by a colon, followed by the data
+//  to go at that address.  If the address is omitted, the data
+//  follows that from the previous line of the file.
 //
 //----------------------------------------------------------------------
 int
 ProcessGetFromFile (int fd, unsigned char *buf, uint32 *addr, int max)
 {
-  char	localbuf[204];
-  int	nbytes;
-  int	seekpos;
+  char  localbuf[204];
+  int nbytes;
+  int seekpos;
   unsigned char *pos = buf;
-  char	*lpos = localbuf;
+  char  *lpos = localbuf;
 
   // Remember our position at the start of the routine so we can adjust
   // it later.
@@ -718,7 +790,7 @@ ProcessGetFromFile (int fd, unsigned char *buf, uint32 *addr, int max)
       // If we're going to go to a new address, we break out of the
       // loop and return what we've got already.
       if (nbytes > 0) {
-	break;
+  break;
       }
       *addr = dstrtol (lpos, &lpos, 16);
       dbprintf ('f', "New address is 0x%x.\n", (int)(*addr));
@@ -726,17 +798,17 @@ ProcessGetFromFile (int fd, unsigned char *buf, uint32 *addr, int max)
     if (*lpos != ':') {
       break;
     }
-    lpos++;	// skip past colon
+    lpos++; // skip past colon
     while (1) {
       while (((*lpos) == ' ') || (*lpos == '\t')) {
-	lpos++;
+  lpos++;
       }
       if (*lpos == '\n') {
-	lpos++;
-	break;
+  lpos++;
+  break;
       } else if (!(isxdigit (*lpos) && isxdigit (*(lpos+1)))) {
      // Exit loop if at least one digit isn't a hex digit.
-	break;
+  break;
       }
       pos[nbytes++] = (getxvalue(*lpos) * 16) + getxvalue(*(lpos+1));
       lpos += 2;
@@ -746,32 +818,33 @@ ProcessGetFromFile (int fd, unsigned char *buf, uint32 *addr, int max)
   // Seek to just past the last line we read.
   FsSeek (fd, seekpos + lpos - localbuf, FS_SEEK_SET);
   dbprintf ('f', "Seeking to %d and returning %d bytes!\n",
-	    (int)(seekpos + lpos - localbuf), nbytes);
+      (int)(seekpos + lpos - localbuf), nbytes);
   return (nbytes);
 }
 
 //----------------------------------------------------------------------
 //
-//	main
+//  main
 //
-//	This routine is called when the OS starts up.  It allocates a
-//	PCB for the first process - the one corresponding to the initial
-//	thread of execution.  Note that the stack pointer is already
-//	set correctly by _osinit (assembly language code) to point
-//	to the stack for the 0th process.  This stack isn't very big,
-//	though, so it should be replaced by the system stack of the
-//	currently running process.
+//  This routine is called when the OS starts up.  It allocates a
+//  PCB for the first process - the one corresponding to the initial
+//  thread of execution.  Note that the stack pointer is already
+//  set correctly by _osinit (assembly language code) to point
+//  to the stack for the 0th process.  This stack isn't very big,
+//  though, so it should be replaced by the system stack of the
+//  currently running process.
 //
 //----------------------------------------------------------------------
 void main (int argc, char *argv[])
 {
-  int		i;
-  int		n;
-  char	buf[120];
-  char		*userprog = (char *)0;
+  int   i;
+  int   n;
+  char  buf[120];
+  char    *userprog = (char *)0;
   int base=0;
   int numargs=0;
   char *params[10]; // Maximum number of command-line parameters is 10
+  int idle_pcb_id;
   
   debugstr[0] = '\0';
 
@@ -790,43 +863,43 @@ void main (int argc, char *argv[])
       switch (argv[i][1]) 
       {
       case 'D':
-	dstrcpy (debugstr, argv[++i]);
-	break;
+  dstrcpy (debugstr, argv[++i]);
+  break;
       case 'i':
-	n = dstrtol (argv[++i], (void *)0, 0);
-	ditoa (n, buf);
-	printf ("Converted %s to %d=%s\n", argv[i], n, buf);
-	break;
+  n = dstrtol (argv[++i], (void *)0, 0);
+  ditoa (n, buf);
+  printf ("Converted %s to %d=%s\n", argv[i], n, buf);
+  break;
       case 'f':
       {
-	int	start, codeS, codeL, dataS, dataL, fd, j;
-	int	addr = 0;
-	static unsigned char buf[200];
-	fd = ProcessGetCodeInfo (argv[++i], &start, &codeS, &codeL, &dataS,
-				 &dataL);
-	printf ("File %s -> start=0x%08x\n", argv[i], start);
-	printf ("File %s -> code @ 0x%08x (size=0x%08x)\n", argv[i], codeS,
-		codeL);
-	printf ("File %s -> data @ 0x%08x (size=0x%08x)\n", argv[i], dataS,
-		dataL);
-	while ((n = ProcessGetFromFile (fd, buf, &addr, sizeof (buf))) > 0) 
-	{
-	  for (j = 0; j < n; j += 4) 
-	  {
-	    printf ("%08x: %02x%02x%02x%02x\n", addr + j - n, buf[j], buf[j+1],
-		    buf[j+2], buf[j+3]);
-	  }
-	}
-	close (fd);
-	break;
+  int start, codeS, codeL, dataS, dataL, fd, j;
+  int addr = 0;
+  static unsigned char buf[200];
+  fd = ProcessGetCodeInfo (argv[++i], &start, &codeS, &codeL, &dataS,
+         &dataL);
+  printf ("File %s -> start=0x%08x\n", argv[i], start);
+  printf ("File %s -> code @ 0x%08x (size=0x%08x)\n", argv[i], codeS,
+    codeL);
+  printf ("File %s -> data @ 0x%08x (size=0x%08x)\n", argv[i], dataS,
+    dataL);
+  while ((n = ProcessGetFromFile (fd, buf, &addr, sizeof (buf))) > 0) 
+  {
+    for (j = 0; j < n; j += 4) 
+    {
+      printf ("%08x: %02x%02x%02x%02x\n", addr + j - n, buf[j], buf[j+1],
+        buf[j+2], buf[j+3]);
+    }
+  }
+  close (fd);
+  break;
       }
       case 'u':
-	userprog = argv[++i];
+  userprog = argv[++i];
         base = i; // Save the location of the user program's name 
-	break;
+  break;
       default:
-	printf ("Option %s not recognized.\n", argv[i]);
-	break;
+  printf ("Option %s not recognized.\n", argv[i]);
+  break;
       }
       if(userprog)
         break;
@@ -837,7 +910,8 @@ void main (int argc, char *argv[])
   dbprintf ('i', "After initializing queues.\n");
   MemoryModuleInit ();
   dbprintf ('i', "After initializing memory.\n");
-
+  MboxModuleInit ();
+  dbprintf ('i', "After initializing mbox.\n");
   ProcessModuleInit ();
   dbprintf ('i', "After initializing processes.\n");
   ShareModuleInit ();
@@ -885,13 +959,15 @@ void main (int argc, char *argv[])
     dbprintf('i', "No user program passed!\n");
   }
 
+  idle_pcb_id = ProcessFork (&ProcessIdle, 0, 20, 0, "idle", 0);
+  idlePCB = &pcbs[idle_pcb_id];
   // Start the clock which will in turn trigger periodic ProcessSchedule's
   ClkStart();
 
   intrreturn ();
   // Should never be called because the scheduler exits when there
   // are no runnable processes left.
-  exitsim();	// NEVER RETURNS!
+  exitsim();  // NEVER RETURNS!
 }
 
 unsigned GetCurrentPid()
@@ -961,7 +1037,76 @@ int GetPidFromAddress(PCB *pcb) {
 // followed by a call to ProcessSchedule (in traps.c).
 //--------------------------------------------------------
 void ProcessUserSleep(int seconds) {
-  // Your code here
+  int intrval;
+  // Make sure it's already a runnable process.
+  intrval = DisableIntrs();
+  dbprintf ('p', "ProcessUserSleep (%d): function started\n", GetCurrentPid());
+  ASSERT (currentPCB->flags & PROCESS_STATUS_RUNNABLE, "Trying to sleep a non-running process!\n");
+  ProcessSetStatus (currentPCB, PROCESS_STATUS_WAITING);
+
+  currentPCB->jSleep = ClkGetCurJiffies();
+  currentPCB->jWake = seconds * JIFFIES_PER_SECOND;
+
+  if (AQueueRemove(&(currentPCB->l)) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not remove process from run Queue in ProcessUserSleep!\n");
+    exitsim();
+  }
+  if ((currentPCB->l = AQueueAllocLink(currentPCB)) == NULL) {
+    printf("FATAL ERROR: could not get Queue Link in ProcessUserSleep!\n");
+    exitsim();
+  }
+  if (AQueueInsertLast(&qSleep, currentPCB->l) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not insert link into queue in ProcessUserSleep!\n");
+    exitsim();
+  }
+  RestoreIntrs(intrval);
+  dbprintf ('p', "ProcessUserSleep (%d): function complete\n", GetCurrentPid());
+}
+
+void ProcessUserWakeup() {
+  Link* l;
+  Link* tmp_l;
+  int iQueue;
+  PCB* pcb;
+  int slept_time;
+
+  if(AQueueEmpty(&qSleep)) {
+    return;
+  }
+
+  tmp_l = AQueueFirst(&qSleep);
+  while (tmp_l != NULL) {
+    l = tmp_l;
+    tmp_l = AQueueNext(tmp_l);
+    pcb = (PCB*) AQueueObject(l);
+
+    slept_time = ClkGetCurJiffies() - pcb->jSleep;
+    if(slept_time >= pcb->jWake) {
+      dbprintf ('p',"Waking up sleepy PID %d.\n", (int)(pcb - pcbs));
+      // Make sure it's not yet a runnable process.
+      ASSERT (pcb->flags & PROCESS_STATUS_WAITING, "Trying to wake up a non-sleeping process!\n");
+      ProcessSetStatus (pcb, PROCESS_STATUS_RUNNABLE);
+      ProcessDecayEstcpuSleep(pcb, slept_time);
+      ProcessRecalcPriority(pcb);
+      iQueue = WhichQueue(pcb);
+
+      if (AQueueRemove(&(pcb->l)) != QUEUE_SUCCESS) {
+        printf("FATAL ERROR: could not remove process from run Queue in ProcessUserWakeup!\n");
+        exitsim();
+      }
+      if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
+        printf("FATAL ERROR: could not get Queue Link in ProcessUserWakeup!\n");
+        exitsim();
+      }
+      if (AQueueInsertLast(&runQueues[iQueue], pcb->l) != QUEUE_SUCCESS) {
+        printf("FATAL ERROR: could not insert link into queue in ProcessUserWakeup!\n");
+        exitsim();
+      }
+      pcb->jWake = 0;
+      pcb->jSleep = 0;
+    }
+  }
+  return;
 }
 
 //-----------------------------------------------------
@@ -970,5 +1115,165 @@ void ProcessUserSleep(int seconds) {
 // ProcessSchedule (in traps.c).
 //-----------------------------------------------------
 void ProcessYield() {
-  // Your code here
+  ProcessSetStatus(currentPCB, PROCESS_STATUS_YIELD);
+}
+
+//-----------------------------------------------------
+// ProcessIdle just an infinite while loop.
+//-----------------------------------------------------
+void ProcessIdle() {
+  while(1);
+}
+
+inline int WhichQueue(PCB *pcb) {
+  return pcb->priority / PRIORITIES_PER_QUEUE;
+}
+
+void ProcessRecalcPriority(PCB *pcb) {
+  if(pcb->flags & PROCESS_TYPE_USER) {
+    pcb->priority = USER_PROCESS_BASE_PRIORITY + pcb->estcpu / 4 + 2 * pcb->pnice;
+  } else {
+    pcb->priority = KERNEL_PROCESS_BASE_PRIORITY + pcb->estcpu / 4 + 2 * pcb->pnice;
+  }
+
+}
+
+void ProcessInsertRunning(PCB *pcb) {
+  if (AQueueInsertLast(&runQueues[WhichQueue(pcb)], pcb->l) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not insert link into runQueue in ProcessInsertRunning!\n");
+    exitsim();
+  }
+}
+
+PCB *ProcessFindHighestPriorityPCB() {
+  int i;
+  for(i = 0; i < NUM_RUN_QUEUES; i++) {
+    if (!AQueueEmpty(&runQueues[i])) {
+      return (PCB *)AQueueObject(AQueueFirst(&runQueues[i]));
+    }
+  }
+  return NULL;
+}
+
+// Returns true if useful runnable processes exists
+int runQueIdleProcChk() {
+  PCB* onlyPCB = NULL;
+  int i;
+  for(i = 0; i < NUM_RUN_QUEUES; i++) {
+    if (!AQueueEmpty(&runQueues[i])) {
+      if(AQueueLength(&runQueues[i]) == 1) {
+        onlyPCB = (PCB *)AQueueObject(AQueueFirst(&runQueues[i]));
+        if(onlyPCB != idlePCB) return 1;
+      }
+      else {
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+int isEmptyqSleep() {
+  if(AQueueEmpty(&qSleep)) {
+    return 0;
+  }
+  return 1;
+}
+
+void ProcessDecayEstcpuSleep(PCB *pcb, int time_asleep_jiffies) {
+  int num_asleep;
+  if (time_asleep_jiffies >= CPU_WINDOWS_BETWEEN_DECAYS * PROCESS_QUANTUM_JIFFIES) {
+    num_asleep = time_asleep_jiffies / (PROCESS_QUANTUM_JIFFIES * CPU_WINDOWS_BETWEEN_DECAYS);
+    pcb->estcpu = pcb->estcpu * pow(((2 * PROCESS_LOAD)/(2 * PROCESS_LOAD + 1)), num_asleep);
+  }
+}
+
+void ProcessDecayAllEstcpus() {
+  int i;
+  PCB* pcb;
+  Link* l;
+
+  for(i = 0; i < NUM_RUN_QUEUES; i++) {
+    if(AQueueEmpty(&runQueues[i])) {
+      continue;
+    }
+    l = AQueueFirst(&runQueues[i]);
+    while (l != NULL) {
+      pcb = AQueueObject(l);
+      pcb->estcpu = (pcb->estcpu * (2 * PROCESS_LOAD)/(2 * PROCESS_LOAD + 1)) + pcb->pnice;
+      ProcessRecalcPriority(pcb);
+      l = AQueueNext(l);
+    }
+  }
+}
+
+void ProcessPrintRunQueues() {
+  int i;
+  Link* l;
+  Link* tmp_l;
+  PCB* pcb;
+  printf("Printing run queues....\n");
+  for(i = 0; i < NUM_RUN_QUEUES; i++) {
+    printf("%d ", i);
+    if(AQueueEmpty(&runQueues[i])) {
+      printf(" | \n");
+      continue;
+    }
+    tmp_l = AQueueFirst(&runQueues[i]);
+    while (tmp_l != NULL) {
+      l = tmp_l;
+      tmp_l = AQueueNext(tmp_l);
+      pcb = AQueueObject(l);
+      printf("%d[%d], ", GetPidFromAddress(pcb), pcb->priority);
+    }
+    printf("\n");
+  }
+  printf("Finished printing run queues.\n");
+
+}
+
+void ProcessFixRunQueues() {
+  int i, j, length, iQueue;
+  PCB* pcb;
+  Link* l;
+  Link* tmp_l;
+
+  for(i = 0; i < NUM_RUN_QUEUES; i++) {
+    if(AQueueEmpty(&runQueues[i])) {
+      continue;
+    }
+    length = AQueueLength(&runQueues[i]);
+    tmp_l = AQueueFirst(&runQueues[i]);
+    for(j = 0; j < length; j++) {
+      l = tmp_l;
+      tmp_l = AQueueNext(tmp_l);
+      pcb = AQueueObject(l);
+      iQueue = WhichQueue(pcb);
+      if (AQueueRemove(&(pcb->l)) != QUEUE_SUCCESS) {
+        printf("FATAL ERROR: could not remove process from run Queue in ProcessFixRunQueues!\n");
+        exitsim();
+      }
+      if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
+        printf("FATAL ERROR: could not get Queue Link in ProcessFixRunQueues!\n");
+        exitsim();
+      }
+      if (AQueueInsertLast(&runQueues[iQueue], pcb->l) != QUEUE_SUCCESS) {
+        printf("FATAL ERROR: could not insert link into queue in ProcessFixRunQueues!\n");
+        exitsim();
+      }
+    }
+  }
+}
+
+
+
+int pow(int base, int exp) {
+  int i;
+  int temp = 1;
+
+  for (i = 0; i < exp; ++i) {
+    temp = temp * base;     
+  }
+
+  return temp;
 }

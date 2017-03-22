@@ -207,6 +207,7 @@ int MboxSend(mbox_t handle, int length, void* message) {
 
 	bcopy(message, mbox_mess_structs[i].message, length);
 	mbox_mess_structs[i].msize = length;
+	mbox_mess_structs[i].inuse = 1;
 
 	if ((l = AQueueAllocLink(&mbox_mess_structs[i])) == NULL) {
 		printf("ERROR: could not allocate link for message in MboxSend\n");
@@ -265,10 +266,15 @@ int MboxRecv(mbox_t handle, int maxlength, void* message) {
 		exitsim();
 	}
 
+	if(AQueueEmpty(&mbox_structs[handle].msg)) {
+		printf("Que empty\n");
+	}
+
 	l = AQueueFirst(&mbox_structs[handle].msg);
 	m = (mbox_message *) l->object;
 
 	if(m->msize > maxlength) {
+		printf("ERROR: msize (%d) > maxlength (%d)\n", m->msize, maxlength);
 		return MBOX_FAIL;
 	}
 
