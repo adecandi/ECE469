@@ -59,7 +59,7 @@ void MemoryModuleInit() {
   int i, j;
   uint32 mask;
   // 4-byte aline lastosadress then divide MEM_PAGESIZE
-  uint32 ospages = (lastosaddress & 1FFFFC) / MEM_PAGESIZE;
+  uint32 ospages = (lastosaddress & 0x1FFFFC) / MEM_PAGESIZE;
 
   nfreepages = MEM_NUM_PAGES - ospages;
   pagestart = ospages + 1;
@@ -89,7 +89,14 @@ void MemoryModuleInit() {
 //
 //----------------------------------------------------------------------
 uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
+  uint32 page = MEM_ADDR2PAGE(addr);
+  uint32 offset = MEM_ADDR2OFFS(addr);
 
+  if (pcb->pagetable[page] & PTE_MEM_PTE_VALID) {
+    return (offset | pcb->pagetable[page] & MEM_MASK_PTE2PAGE)
+  } else {
+    return MEM_FAIL;
+  }
 }
 
 
@@ -190,7 +197,30 @@ int MemoryCopyUserToSystem (PCB *pcb, unsigned char *from,unsigned char *to, int
 // Feel free to edit.
 //---------------------------------------------------------------------
 int MemoryPageFaultHandler(PCB *pcb) {
-  return MEM_FAIL;
+  uint32 fault_address;
+  uint32 usr_stack_ptr;
+  int new_page;
+
+  fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
+  usr_stack_ptr = pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER];
+
+  if(fault_address >= usr_stack_ptr) {
+    //ALLOC NEW PAGE
+    new_page = MemoryAllocPage();
+    if (new_page == MEM_FAIL) {
+      printf("FATAL: Not enough pages.");
+      ProcessKill(pcb);
+    } else {
+      pcb->pagetable[MEM_ADDR2PAGE(fault_address)] = MemorySetupPte(new_page);
+      pcb->npages += 1;
+      return MEM_SUCCESS;
+    }
+  } else {
+    //SEG FAULT
+    dbprintf('m', "SegFault: killing processid %d\n", GetCurrentPid());
+    ProcessKill(pcb);
+    return MEM_FAIL;
+  }
 }
 
 
