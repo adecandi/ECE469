@@ -87,7 +87,10 @@ void ProcessModuleInit () {
     // STUDENT: Initialize the PCB's page table here.
     //-------------------------------------------------------
 
-    pcb[i].npages = 0;
+    pcbs[i].npages = 0;
+    for (j = 0; j < MEM_L1PAGETABLE_SIZE; j++) {
+      pcbs[i].pagetable[j] = 0;
+    }
 
     // Finally, insert the link into the queue
     if (AQueueInsertFirst(&freepcbs, pcbs[i].l) != QUEUE_SUCCESS) {
@@ -99,7 +102,7 @@ void ProcessModuleInit () {
   currentPCB = NULL;
   dbprintf ('p', "Leaving ProcessModuleInit\n");
 }
-
+
 //----------------------------------------------------------------------
 //
 //	ProcessSetStatus
@@ -139,7 +142,13 @@ void ProcessFreeResources (PCB *pcb) {
   //------------------------------------------------------------
   // STUDENT: Free any memory resources on process death here.
   //------------------------------------------------------------
-
+  for (i = 0; i < MEM_L1PAGETABLE_SIZE; i++) {
+    pcb->pagetable[i] = 0;
+    MemoryFreePage(pcb->pagetable[i]);
+  }
+  MemoryFreePage(pcb->pagetable);
+  pcb->sysStackArea = 0;
+  MemoryFreePage(pcb->sysStackArea);
 
   ProcessSetStatus (pcb, PROCESS_STATUS_FREE);
 }
