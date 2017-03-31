@@ -210,6 +210,7 @@ int MemoryPageFaultHandler(PCB *pcb) {
     if (new_page == MEM_FAIL) {
       printf("FATAL: Not enough pages.");
       ProcessKill(pcb);
+      return MEM_FAIL;
     } else {
       pcb->pagetable[MEM_ADDR2PAGE(fault_address)] = MemorySetupPte(new_page);
       pcb->npages += 1;
@@ -217,7 +218,8 @@ int MemoryPageFaultHandler(PCB *pcb) {
     }
   } else {
     //SEG FAULT
-    dbprintf('m', "SegFault: killing processid %d\n", GetCurrentPid());
+    dbprintf('m', "addr = %x\nsp = %x\n", addr, pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER]); 
+    printf("SegFault: killing processid %d\n. Addr: %x in page: %x\n.", GetCurrentPid(pcb), addr MEM_ADDR2PAGE(fault_address));
     ProcessKill(pcb);
     return MEM_FAIL;
   }
@@ -230,6 +232,15 @@ int MemoryPageFaultHandler(PCB *pcb) {
 //---------------------------------------------------------------------
 
 int MemoryAllocPage(void) {
+  int i, j;
+  uint32 maks;
+
+  for (i = 0; i < 16; i++) {
+    mask = 0x1;
+    if (freemap[i] > 0) {
+      
+    }
+  }
   return -1;
 }
 
