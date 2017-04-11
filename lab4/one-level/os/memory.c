@@ -231,25 +231,42 @@ int MemoryPageFaultHandler(PCB *pcb) {
 // Feel free to edit/remove them
 //---------------------------------------------------------------------
 
+// Finds a free page in the freemap, allocates it and returns the number
 int MemoryAllocPage(void) {
   int i, j;
-  uint32 maks;
+  bool stop = 0;
+  uint32 mask;
 
-  for (i = 0; i < 16; i++) {
+  for(i = 0; i < freemapmax; i++) {
+    freemap[i] = 0;
     mask = 0x1;
-    if (freemap[i] > 0) {
-      
+    for(j = 0; j < 32; j++) {
+      if(freemap[i] & mask == 0) {
+        mapval = (i * 32) + j;
+        return mapval;
+      }
+      mask = mask << 1;
     }
   }
-  return -1;
+
+  return MEM_FAIL;
 }
 
-
 uint32 MemorySetupPte (uint32 page) {
-  return -1;
+  uint32 i;
+
+  i = page << MEM_L1FIELD_FIRST_BITNUM;
+  i = i | MEM_PTE_VALID;
+  return i;
 }
 
 
 void MemoryFreePage(uint32 page) {
+  int bit, index;
+  page = page & 0x1FF000;
+  page = page >> MEM_L1FIELD_FIRST_BITNUM;
+  bit = page % 32; //bit index
+  index = page / 32;
+  freemap[index] ^= 1 << bit;
 }
 
