@@ -3,8 +3,6 @@
 //
 //	Routines for dealing with memory management.
 
-//static char rcsid[] = "$Id: memory.c,v 1.1 2000/09/20 01:50:19 elm Exp elm $";
-
 #include "ostraps.h"
 #include "dlxos.h"
 #include "process.h"
@@ -12,8 +10,8 @@
 #include "queue.h"
 
 // num_pages = size_of_memory / size_of_one_page
-static int freemapmax = MEM_NUM_PAGES / 32;
-static uint32 freemap[15];
+static int freemapmax;
+static uint32 freemap[16];
 static uint32 pagestart;
 static int nfreepages;
 
@@ -56,27 +54,35 @@ int MemoryGetSize() {
 //
 //----------------------------------------------------------------------
 void MemoryModuleInit() {
-  int i, j;
-  uint32 mask;
+  int i;
+  int maxpage = MemoryGetSize() / MEM_PAGESIZE;
   // 4-byte aline lastosadress then divide MEM_PAGESIZE
   uint32 ospages = (lastosaddress & 0x1FFFFC) / MEM_PAGESIZE;
 
+  dbprintf('m', "MemoryModuleInit:  begin");
+
   nfreepages = MEM_NUM_PAGES - ospages;
   pagestart = ospages + 1;
+  freemapmax = (maxpage+31) / 32;
 
+  // Initialize all to in use initially
+  nfreepages = 0;
   for(i = 0; i < freemapmax; i++) {
     freemap[i] = 0;
-    mask = 0x1;
-    if(ospages > 0) {
-      for(j = 0; j < 32; j++) {
-        if(ospages > 0) {
-          freemap[i] = freemap[i] | mask;
-          ospages--;
-        }
-        mask = mask << 1;
-      }
-    }
   }
+
+  // Go from the page start to the maxpage
+  for(i = pagestart; i < maxpage; i++) {
+    nfreepages += 1;
+    MemoryEditFreemap(i, 1);
+  }
+  dbprintf('m', "Initialized %d free pages.\n", nfreepages);
+}
+
+void MemoryEditFreemap(int page, int val) {
+  uint32 index = page / 32;
+  uint32 bit_position = page % 32;
+  freemap[index] = (freemap[index] & invert(1 << bit_position)) | (val << bit_position);
 }
 
 
@@ -93,10 +99,9 @@ uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
   uint32 offset = MEM_ADDR2OFFS(addr);
 
   if (pcb->pagetable[page] & MEM_PTE_VALID) {
-    return ((offset | pcb->pagetable[page]) & MEM_MASK_PTE2PAGE);
-  } else {
-    return MEM_FAIL;
+    return ((pcb->pagetable[page] & MEM_MASK_PTE2PAGE) | offset);
   }
+  return MEM_FAIL;
 }
 
 
@@ -197,31 +202,33 @@ int MemoryCopyUserToSystem (PCB *pcb, unsigned char *from,unsigned char *to, int
 // Feel free to edit.
 //---------------------------------------------------------------------
 int MemoryPageFaultHandler(PCB *pcb) {
-  uint32 fault_address;
-  uint32 usr_stack_ptr;
-  int new_page;
+  // addresses to use
+  uint32 user_stack_ptr = pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER];
+  uint32 fault_addr = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
+  // corresponding pages for the addresses
+  int pg_fault_addr = MEM_ADDR2PAGE(fault_addr);
+  int pg_user_stack_ptr = MEM_ADDR2PAGE(user_stack_ptr);
+  int vpage;
+  int newPage;
 
-  fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
-  usr_stack_ptr = pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER];
-
-  if(fault_address >= usr_stack_ptr) {
-    //ALLOC NEW PAGE
-    new_page = MemoryAllocPage();
-    if (new_page == MEM_FAIL) {
-      printf("FATAL: Not enough pages.");
-      ProcessKill(pcb);
-      return MEM_FAIL;
-    } else {
-      pcb->pagetable[MEM_ADDR2PAGE(fault_address)] = MemorySetupPte(new_page);
-      pcb->npages += 1;
-      return MEM_SUCCESS;
-    }
-  } else {
-    //SEG FAULT
-    dbprintf('m', "addr = %x\nsp = %x\n", fault_address, pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER]); 
-    printf("SegFault: killing processid %d\n. Addr: %x in page: %x\n.", GetCurrentPid(pcb), fault_address, MEM_ADDR2PAGE(fault_address));
-    ProcessKill(pcb);
+  dbprintf('m', "MemoryPageFaultHandler (%d): Begin1\n", GetPidFromAddress(pcb));
+  if(fault_addr < user_stack_ptr) {
+    printf("Exiting PID %d: MemoryPageFaultHandler seg fault\n", GetPidFromAddress(pcb));
+    dbprintf ('m', "MemoryPageFaultHandler (%d): seg fault addr=0x%x\n", GetPidFromAddress(pcb), fault_addr);
+    ProcessKill();
     return MEM_FAIL;
+  }
+  else {
+    dbprintf('z', "MemoryPageFaultHandler allocating new page\n");
+    vpage = pg_fault_addr;
+    newPage = MemoryAllocPage();
+    if(newPage == MEM_FAIL) {
+      printf("FATAL: not enough free pages for %d\n", GetPidFromAddress(pcb));
+      ProcessKill();
+    }
+    pcb->pagetable[vpage] = MemorySetupPte(newPage);
+    pcb->npages += 1;
+    return MEM_SUCCESS;
   }
 }
 
@@ -233,41 +240,41 @@ int MemoryPageFaultHandler(PCB *pcb) {
 
 // Finds a free page in the freemap, allocates it and returns the number
 int MemoryAllocPage(void) {
-  int i, j;
-  int mapval;
-  uint32 mask;
+  static int mapnum = 0;
+  int bitnum;
+  uint32 vector;
 
-  for(i = 0; i < freemapmax; i++) {
-    freemap[i] = 0;
-    mask = 0x1;
-    for(j = 0; j < 32; j++) {
-      if((freemap[i] & mask) == 0) {
-        mapval = (i * 32) + j;
-        return mapval;
-      }
-      mask = mask << 1;
+  dbprintf('m', "MemoryAllocPage: function started nfreepages=%d\n", nfreepages);
+  if(nfreepages == 0) {
+    return MEM_FAIL;
+  }
+  while(freemap[mapnum] == 0) {
+    mapnum += 1;
+    if(mapnum >= freemapmax) {
+      mapnum = 0;
     }
   }
-
-  return MEM_FAIL;
+  vector = freemap[mapnum];
+  for(bitnum = 0; (vector & (1 << bitnum)) == 0; bitnum++){}
+  freemap[mapnum]  &= invert(1 << bitnum);
+  vector = (mapnum * 32) + bitnum; // use same var to store free page number
+  dbprintf('m', "MemoryAllocPage: allocated memory from map=%d, page=%d\n", mapnum, vector);
+  nfreepages -= 1;
+  return vector; // page number on memory space
 }
 
 uint32 MemorySetupPte (uint32 page) {
-  uint32 i;
-
-  i = page << MEM_L1FIELD_FIRST_BITNUM;
-  i = i | MEM_PTE_VALID;
-  return i;
+  return ((page * MEM_PAGESIZE) | MEM_PTE_VALID);
 }
 
+void MemoryFreePageTableEntry(uint32 pte) {
+  MemoryFreePage((pte & MEM_MASK_PTE2PAGE) / MEM_PAGESIZE);
+}
 
 void MemoryFreePage(uint32 page) {
-  int bit, index;
-  page = page & 0x1FF000;
-  page = page >> MEM_L1FIELD_FIRST_BITNUM;
-  bit = page % 32; //bit index
-  index = page / 32;
-  freemap[index] ^= 1 << bit;
+  MemoryEditFreemap(page, 1);
+  nfreepages += 1;
+  dbprintf ('m',"Freeing page 0x%x, %d remaining.\n", page, nfreepages);
 }
 
 void* malloc(PCB* pcb, int memsize) {

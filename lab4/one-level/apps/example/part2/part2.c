@@ -30,6 +30,7 @@ void main (int argc, char *argv[])
 
   mem_loc = (MEM_MAX_VIRTUAL_ADDRESS + 1);
   Printf("part2 (%d): Accessing Memory Location: %d (decimal)\n", getpid(), mem_loc);
+  Printf("part2 (%d): Accessing Memory Location: %d (decimal)\n", getpid(), *mem_loc);
   Printf("part2 (%d): DONE!\n", getpid());
 
 }

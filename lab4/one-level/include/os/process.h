@@ -78,7 +78,7 @@ extern PCB	*currentPCB;
 // sure to prefix their names with "PROCESS_" so the
 // grader knows that they are defined in this file.
 //---------------------------------------------------------
-
+#define PROCESS_FORK_FAIL -1
 
 
 //---------------------------------------------------------

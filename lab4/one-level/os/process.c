@@ -125,7 +125,7 @@ void ProcessSetStatus (PCB *pcb, int status) {
 //----------------------------------------------------------------------
 void ProcessFreeResources (PCB *pcb) {
   int i = 0;
-
+  int user_stack_pg = MEM_ADDR2PAGE(pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER]);
   // Allocate a new link for this pcb on the freepcbs queue
   if ((pcb->l = AQueueAllocLink(pcb)) == NULL) {
     printf("FATAL ERROR: could not get Queue Link in ProcessFreeResources!\n");
@@ -142,14 +142,21 @@ void ProcessFreeResources (PCB *pcb) {
   //------------------------------------------------------------
   // STUDENT: Free any memory resources on process death here.
   //------------------------------------------------------------
-  for (i = 0; i < MEM_L1PAGETABLE_SIZE; i++) {
-    MemoryFreePage(pcb->pagetable[i]);
-    pcb->pagetable[i] = 0;
+  
+  // Free the original four page table entries
+  for(i = 0; i < 4; i++) {
+    MemoryFreePageTableEntry(pcb->pagetable[i]);
   }
-  pcb->npages = 0;
-  MemoryFreePage(pcb->sysStackArea);
-  pcb->sysStackArea = 0;
+
+  // Free the user stack (start at current and go to max)
+  for(i = user_stack_pg; i <= MEM_ADDR2PAGE(MEM_MAX_VIRTUAL_ADDRESS); i++) {
+    MemoryFreePageTableEntry(pcb->pagetable[i]);
+  }
+
+  // Free the system stack
+  MemoryFreePage (pcb->sysStackArea / MEM_PAGESIZE);
   ProcessSetStatus (pcb, PROCESS_STATUS_FREE);
+  dbprintf ('p', "ProcessFreeResources: function complete\n");
 }
 
 //----------------------------------------------------------------------
@@ -386,6 +393,7 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   uint32 offset;           // Used in parsing command line argument strings, holds offset (in bytes) from 
                            // beginning of the string to the current argument.
   uint32 initial_user_params_bytes;  // total number of bytes in initial user parameters array
+  uint32 GrabPg;
 
 
   intrs = DisableIntrs ();
@@ -427,35 +435,35 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // for the system stack.
   //---------------------------------------------------------
 
-  pcb->npages = 6;
+  pcb->npages = 4;
   //user and global data:
   for (i = 0; i < 4; i++) {
-    pcb->pagetable[i] = MemoryAllocPage();
-    if (pcb->pagetable[i] == MEM_FAIL) {
-      printf("Error Could not allocate page \n");
+    GrabPg = MemoryAllocPage();
+    if (GrabPg == MEM_FAIL) {
+      printf("Error could not allocate page \n");
       exitsim();
     }
-    pcb->pagetable[i] = MemorySetupPte(pcb->pagetable[i]);
+    pcb->pagetable[i] = MemorySetupPte(GrabPg);
   }
+
+  //User stack frame
+  pcb->npages += 1;
+  GrabPg = MemoryAllocPage();
+  if (GrabPg == MEM_FAIL) {
+    printf("Error Could not allocate page \n");
+    exitsim();
+  }
+  pcb->pagetable[MEM_ADDR2PAGE(MEM_MAX_VIRTUAL_ADDRESS)] = MemorySetupPte(GrabPg);
 
   //System Stak Frame
-  pcb->sysStackArea = MemoryAllocPage();
-  if (pcb->sysStackArea == MEM_FAIL) {
+  GrabPg = MemoryAllocPage();
+  if (GrabPg == MEM_FAIL) {
     printf("Error Could not allocate page \n");
     exitsim();
   }
+  pcb->sysStackArea = GrabPg * MEM_PAGESIZE;
 
-  pcb->sysStackArea = MemorySetupPte(pcb->sysStackArea) ^ 0x1;
-
-  //User stack
-  pcb->pagetable[MEM_PAGE_TABLE_SIZE - 1] = MemoryAllocPage();
-  if (pcb->pagetable[MEM_PAGE_TABLE_SIZE - 1] == MEM_FAIL) {
-    printf("Error Could not allocate page \n");
-    exitsim();
-  }
-  pcb->pagetable[MEM_PAGE_TABLE_SIZE - 1] = MemorySetupPte(pcb->pagetable[MEM_PAGE_TABLE_SIZE - 1]);
-
-  stackframe = (uint32*)(pcb->sysStackArea + 0xffc);
+  stackframe = (uint32 *)(pcb->sysStackArea + MEM_PAGESIZE - 4);
 
 
 
@@ -488,16 +496,15 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // stack frame.
   //----------------------------------------------------------------------
 
-  pcb->currentSavedFrame[PROCESS_STACK_PTBASE] = (uint32) &pcb->pagetable[0];
-  pcb->currentSavedFrame[PROCESS_STACK_PTBITS] = MEM_L1FIELD_FIRST_BITNUM << 16;
-  pcb->currentSavedFrame[PROCESS_STACK_PTBITS] |= MEM_L1FIELD_FIRST_BITNUM;
-  pcb->currentSavedFrame[PROCESS_STACK_PTSIZE] = MEM_PAGE_TABLE_SIZE; 
+  stackframe[PROCESS_STACK_PTBASE] = (uint32) &pcb->pagetable[0];
+  stackframe[PROCESS_STACK_PTBITS] = (MEM_L1FIELD_FIRST_BITNUM << 16) | MEM_L1FIELD_FIRST_BITNUM;
+  stackframe[PROCESS_STACK_PTSIZE] = MEM_L1PAGETABLE_SIZE; 
 
   if (isUser) {
     dbprintf ('p', "About to load %s\n", name);
     fd = ProcessGetCodeInfo (name, &start, &codeS, &codeL, &dataS, &dataL);
     if (fd < 0) {
-      // Free newpage and pcb so we don't run out...
+      // Free GrabPg and pcb so we don't run out...
       ProcessFreeResources (pcb);
       return (-1);
     }

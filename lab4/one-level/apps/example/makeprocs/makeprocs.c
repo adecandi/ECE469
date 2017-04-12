@@ -21,12 +21,13 @@ void main (int argc, char *argv[])
     Exit();
   }
 
+  Printf("Checking num_procs\n");
   // Convert string from ascii command line argument to integer number
   proc_sel = dstrtol(argv[1], NULL, 10); // the "10" means base 10
 
   switch(proc_sel) {
     case 0:
-      num_procs = 133;
+      num_procs = 134;
       break;
     case 1:
       num_procs = 1;
@@ -79,6 +80,13 @@ void main (int argc, char *argv[])
     Printf("makeprocs (%d): part3\n", getpid());
     Printf("makeprocs (%d): Creating process to test unallocated\n", getpid());
     process_create(part3, s_procs_completed_str, NULL);
+  } 
+
+  if(proc_sel == 4 || proc_sel == 0) {
+    Printf("-------------------------------------------------------------------------------------\n");
+    Printf("makeprocs (%d): part3\n", getpid());
+    Printf("makeprocs (%d): Creating process to test unallocated\n", getpid());
+    process_create(part4, s_procs_completed_str, NULL);
   } 
 
   if(proc_sel == 5 || proc_sel == 0) {

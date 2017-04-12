@@ -27,5 +27,7 @@ void MemoryFreePage(uint32 page);
 
 void* malloc(PCB* pcb, int memsize);
 int mfree(PCB* pcb, void* ptr);
+void MemoryChangeFreemap(int page, int val);
+void MemoryFreePageTableEntry(uint32 pte);
 
 #endif	// _memory_h_
