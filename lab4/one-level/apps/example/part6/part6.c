@@ -20,8 +20,9 @@ void main (int argc, char *argv[])
   Printf("part6 (%d): Looping to a large number\n", getpid());
   Printf("part6 (%d): START!\n", getpid());
 
+  // BIG LOOPS ARE FUN
   for(i =0; i<100000; i++) {
-
+    // do nothing
   }
 
   Printf("part6 (%d): Looping complete\n", getpid());

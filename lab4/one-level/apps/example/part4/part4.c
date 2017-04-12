@@ -4,13 +4,14 @@
 int rec(int n)
 {
   if(n == 0) {return 0;}
+  // recursion to grow the call stack
   return (1 + rec(n - 1));
 }
 
 void main (int argc, char *argv[])
 {
   sem_t s_procs_completed; // Semaphore to signal the original process that we're done
-  int x = 10000;
+  int x = 2500;
   int out;
 
   if (argc != 2) { 
@@ -24,6 +25,7 @@ void main (int argc, char *argv[])
   // Now print a message to show that everything worked
   Printf("part4 (%d): Testing growing stack past 1 page!\n", getpid());
 
+  // call recursive function to grow the call stack
   out = rec(x);
 
   // Signal the semaphore to tell the original process that we're done

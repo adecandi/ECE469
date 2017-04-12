@@ -80,8 +80,10 @@ void MemoryModuleInit() {
 }
 
 void MemoryEditFreemap(int page, int val) {
+  // get page and bit position
   uint32 index = page / 32;
   uint32 bit_position = page % 32;
+  // set the val
   freemap[index] = (freemap[index] & invert(1 << bit_position)) | (val << bit_position);
 }
 
@@ -95,9 +97,11 @@ void MemoryEditFreemap(int page, int val) {
 //
 //----------------------------------------------------------------------
 uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
+  // Grabs the page and offset from the address
   uint32 page = MEM_ADDR2PAGE(addr);
   uint32 offset = MEM_ADDR2OFFS(addr);
 
+  // Checks validity before returning
   if (pcb->pagetable[page] & MEM_PTE_VALID) {
     return ((pcb->pagetable[page] & MEM_MASK_PTE2PAGE) | offset);
   }
@@ -208,28 +212,31 @@ int MemoryPageFaultHandler(PCB *pcb) {
   // corresponding pages for the addresses
   int pg_fault_addr = MEM_ADDR2PAGE(fault_addr);
   int pg_user_stack_ptr = MEM_ADDR2PAGE(user_stack_ptr);
-  int vpage;
-  int generatedPage;
+  int genPage;
 
   user_stack_ptr &= 0x1FF000;
 
   dbprintf('m', "MemoryPageFaultHandler (%d): Begin1\n", GetPidFromAddress(pcb));
 
+  // Compare fault address and user stack pointer
   if(fault_addr < user_stack_ptr) {
+    // True seg fault
     printf("Exiting PID %d: MemoryPageFaultHandler seg fault\n", GetPidFromAddress(pcb));
     dbprintf ('m', "MemoryPageFaultHandler (%d): seg fault addr=0x%x\n", GetPidFromAddress(pcb), fault_addr);
     ProcessKill();
     return MEM_FAIL;
-  }
-  else {
-    vpage = pg_fault_addr;
-    generatedPage = MemoryAllocPage();
-    if(generatedPage == MEM_FAIL) {
+  } else {
+    // Not a seg fault
+    // Allocate a new page to use
+    genPage = MemoryAllocPage();
+    if(genPage == MEM_FAIL) {
       printf("FATAL: not enough free pages for %d\n", GetPidFromAddress(pcb));
       ProcessKill();
     }
-    pcb->pagetable[vpage] = MemorySetupPte(generatedPage);
-    dbprintf('z', "MemoryPageFaultHandler PID (%d): allocating new page (%d)\n", GetPidFromAddress(pcb), generatedPage);
+    // Use the setup pte function
+    pcb->pagetable[pg_fault_addr] = MemorySetupPte(genPage);
+    // Used to show a debug message that a new page has been allocated from the memorypagefault handler for part5
+    dbprintf('z', "MemoryPageFaultHandler PID (%d): allocating new page (%d)\n", GetPidFromAddress(pcb), genPage);
     pcb->npages += 1;
     return MEM_SUCCESS;
   }
@@ -243,27 +250,36 @@ int MemoryPageFaultHandler(PCB *pcb) {
 
 // Finds a free page in the freemap, allocates it and returns the number
 int MemoryAllocPage(void) {
-  static int mapnum = 0;
-  int bitnum;
-  uint32 vector;
+  int index = 0;
+  uint32 bit_position;
+  uint32 fm_segment;
 
-  dbprintf('m', "MemoryAllocPage: function started nfreepages=%d\n", nfreepages);
+  dbprintf('m', "MemoryAllocPage: function started\n");
+  // If there are no freepages available return a memfail
   if(nfreepages == 0) {
+    dbprintf('m', "MemoryAllocPage: no available pages\n");
     return MEM_FAIL;
   }
-  while(freemap[mapnum] == 0) {
-    mapnum += 1;
-    if(mapnum >= freemapmax) {
-      mapnum = 0;
+
+  // loop through the freemaps until you find one with available slots
+  while(freemap[index] == 0) {
+    index += 1;
+    if(index >= freemapmax) {
+      index = 0;
     }
   }
-  vector = freemap[mapnum];
-  for(bitnum = 0; (vector & (1 << bitnum)) == 0; bitnum++){}
-  freemap[mapnum]  &= invert(1 << bitnum);
-  vector = (mapnum * 32) + bitnum; // use same var to store free page number
-  dbprintf('m', "MemoryAllocPage: allocated memory from map=%d, page=%d\n", mapnum, vector);
+  // grab the freemap segment (32 bits of freemap)
+  fm_segment = freemap[index];
+  // loop to find the first available position in that segment
+  for(bit_position = 0; (fm_segment & (1 << bit_position)) == 0; bit_position++){ }
+  // set the specific value in that segment
+  freemap[index]  &= invert(1 << bit_position);
+  // grab the page number
+  fm_segment = (index * 32) + bit_position; 
+  dbprintf('m', "MemoryAllocPage: allocated memory from map=%d, page=%d\n", index, fm_segment);
+  // Decrement nfreepages since it's in use
   nfreepages -= 1;
-  return vector; // page number on memory space
+  return fm_segment; // page number on memory space
 }
 
 uint32 MemorySetupPte (uint32 page) {
@@ -271,15 +287,19 @@ uint32 MemorySetupPte (uint32 page) {
 }
 
 void MemoryFreePageTableEntry(uint32 pte) {
+  // Converts pagetable entry to page and then sends to memory free page function
   MemoryFreePage((pte & MEM_MASK_PTE2PAGE) / MEM_PAGESIZE);
 }
 
 void MemoryFreePage(uint32 page) {
+  // flip the freemap bit to set the position to available
   MemoryEditFreemap(page, 1);
+  // free page now open
   nfreepages += 1;
   dbprintf ('m',"Freeing page 0x%x, %d remaining.\n", page, nfreepages);
 }
 
+// Empty functions to get compile to work, referenced from piazza question
 void* malloc(PCB* pcb, int memsize) {
   return NULL;
 }

@@ -27,9 +27,11 @@ void main (int argc, char *argv[])
     Printf("part2 (%d): Bad semaphore s_procs_completed (%d)!\n", getpid(), s_procs_completed);
     Exit();
   }
-
+  // set the memory location to greater than the max
   mem_loc = (MEM_MAX_VIRTUAL_ADDRESS + 1);
+  // print where we will test
   Printf("part2 (%d): Accessing Memory Location: %d (decimal)\n", getpid(), mem_loc);
+  // attempt to access that location
   Printf("part2 (%d): Accessing Memory Location: %d (decimal)\n", getpid(), *mem_loc);
   Printf("part2 (%d): DONE!\n", getpid());
 

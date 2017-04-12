@@ -25,28 +25,15 @@ void main (int argc, char *argv[])
   // Convert string from ascii command line argument to integer number
   proc_sel = dstrtol(argv[1], NULL, 10); // the "10" means base 10
 
+  // Switch case to know how many num_procs for the semaphore
   switch(proc_sel) {
-    case 0:
-      num_procs = 134;
-      break;
-    case 1:
-      num_procs = 1;
-      break;
-    case 2:
-      num_procs = 1;
-      break;
-    case 3:
-      num_procs = 1;
-      break;
-    case 4:
-      num_procs = 1;
-      break;
-    case 5:
-      num_procs = 100;
-      break;
-    case 6:
-      num_procs = 30;
-      break;
+    case 0: num_procs = 134;  break;
+    case 1: num_procs = 1;    break;
+    case 2: num_procs = 1;    break;
+    case 3: num_procs = 1;    break;
+    case 4: num_procs = 1;    break;
+    case 5: num_procs = 100;  break;
+    case 6: num_procs = 30;   break;
   }
 
   // Create semaphore to not exit this process until all other processes 
