@@ -67,6 +67,7 @@ void yield();                           //trap 0x466
 void *malloc(int memsize);              //trap 0x467
 int mfree(void *ptr);                   //trap 0x468
 
+int fork();								//trap 0x430
 
 #ifndef NULL
 #define NULL (void *)0x0

@@ -10,10 +10,12 @@
 #include "queue.h"
 
 // num_pages = size_of_memory / size_of_one_page
-static int freemapmax;
-static uint32 freemap[16];
+// (MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32 = 16
+static uint32 freemap[(MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32];
 static uint32 pagestart;
+static int ref_counters[MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM];
 static int nfreepages;
+static int freemapmax;
 
 //----------------------------------------------------------------------
 //
@@ -60,6 +62,7 @@ void MemoryModuleInit() {
   uint32 ospages = (lastosaddress & 0x1FFFFC) / MEM_PAGESIZE;
 
   dbprintf('m', "MemoryModuleInit:  begin");
+  printf("(MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32 = %d", (MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32);
 
   nfreepages = MEM_NUM_PAGES - ospages;
   pagestart = ospages + 1;
@@ -69,6 +72,11 @@ void MemoryModuleInit() {
   nfreepages = 0;
   for(i = 0; i < freemapmax; i++) {
     freemap[i] = 0;
+  }
+
+  // set reference counter for the os pages
+  for(i = 0; i < pagestart; i++) {
+    ref_counters[i] = 1;
   }
 
   // Go from the page start to the maxpage
@@ -208,10 +216,9 @@ int MemoryCopyUserToSystem (PCB *pcb, unsigned char *from,unsigned char *to, int
 int MemoryPageFaultHandler(PCB *pcb) {
   // addresses to use
   uint32 user_stack_ptr = pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER];
-  uint32 fault_addr = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
+  uint32 fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
   // corresponding pages for the addresses
-  int pg_fault_addr = MEM_ADDR2PAGE(fault_addr);
-  int pg_user_stack_ptr = MEM_ADDR2PAGE(user_stack_ptr);
+  int pg_fault_address = MEM_ADDR2PAGE(fault_address);
   int genPage;
 
   user_stack_ptr &= 0x1FF000;
@@ -219,10 +226,10 @@ int MemoryPageFaultHandler(PCB *pcb) {
   dbprintf('m', "MemoryPageFaultHandler (%d): Begin1\n", GetPidFromAddress(pcb));
 
   // Compare fault address and user stack pointer
-  if(fault_addr < user_stack_ptr) {
+  if(fault_address < user_stack_ptr) {
     // True seg fault
     printf("Exiting PID %d: MemoryPageFaultHandler seg fault\n", GetPidFromAddress(pcb));
-    dbprintf ('m', "MemoryPageFaultHandler (%d): seg fault addr=0x%x\n", GetPidFromAddress(pcb), fault_addr);
+    dbprintf ('m', "MemoryPageFaultHandler (%d): seg fault addr=0x%x\n", GetPidFromAddress(pcb), fault_address);
     ProcessKill();
     return MEM_FAIL;
   } else {
@@ -234,7 +241,7 @@ int MemoryPageFaultHandler(PCB *pcb) {
       ProcessKill();
     }
     // Use the setup pte function
-    pcb->pagetable[pg_fault_addr] = MemorySetupPte(genPage);
+    pcb->pagetable[pg_fault_address] = MemorySetupPte(genPage);
     // Used to show a debug message that a new page has been allocated from the memorypagefault handler for part5
     dbprintf('z', "MemoryPageFaultHandler PID (%d): allocating new page (%d)\n", GetPidFromAddress(pcb), genPage);
     pcb->npages += 1;
@@ -279,6 +286,8 @@ int MemoryAllocPage(void) {
   dbprintf('m', "MemoryAllocPage: allocated memory from map=%d, page=%d\n", index, fm_segment);
   // Decrement nfreepages since it's in use
   nfreepages -= 1;
+  // Set the reference counter to 1 since this is a newly used page
+  ref_counters[fm_segment] = 1;
   return fm_segment; // page number on memory space
 }
 
@@ -291,12 +300,55 @@ void MemoryFreePageTableEntry(uint32 pte) {
   MemoryFreePage((pte & MEM_MASK_PTE2PAGE) / MEM_PAGESIZE);
 }
 
+void MemorySharePte (uint32 pte) {
+  // convert PTE to page (the real fork process handles setting the read only bit)
+  int page = ((pte & MEM_MASK_PTE2PAGE) / MEM_PAGESIZE);
+  // increment the reference counter
+  ref_counters[page] += 1;
+  // debug message
+  dbprintf('m', "MemorySharePte: page=%d count=%d\n", page, ref_counters[page]);
+}
+
 void MemoryFreePage(uint32 page) {
-  // flip the freemap bit to set the position to available
-  MemoryEditFreemap(page, 1);
-  // free page now open
-  nfreepages += 1;
-  dbprintf ('m',"Freeing page 0x%x, %d remaining.\n", page, nfreepages);
+  // Now since multiple forks we need to check the ref_counters
+  ref_counters[page] -= 1;
+  if(ref_counters[page] > 0) {
+    // if the ref_counters[page] isn't 0 yet, it's still used
+    dbprintf('m', "MemoryFreePage: decrementing ref_counters[%d] to %d\n", page, ref_counters[page]);
+  } else { // if the ref_counters is 0 we can actually free the page fully
+    // flip the freemap bit to set the position to available
+    MemoryEditFreemap(page, 1);
+    // free page now open
+    nfreepages += 1;
+    dbprintf ('m',"Freeing page 0x%x, %d remaining.\n", page, nfreepages);
+  }
+}
+
+void MemoryRopHandler(PCB * pcb) {
+  // addresses to use
+  uint32 fault_address = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
+  // corresponding pages for the addresses
+  int pg_fault_address = MEM_ADDR2PAGE(fault_address);
+  int parent_page = MEM_ADDR2PAGE(pcb->pagetable[pg_fault_address] & MEM_MASK_PTE2PAGE);
+  int genPage;
+
+  dbprintf('m', "MemoryRopHandler: Begin.\n");
+
+  if(ref_counters[parent_page] > 1) {
+    dbprintf('m', "Copying page %d to page %d\n", parent_page, pg_fault_address);
+    // generate and setup a page
+    genPage = MemoryAllocPage();
+    pcb->pagetable[pg_fault_address] = MemorySetupPte (genPage);
+    // do the copying
+    bcopy((char *)(fault_address), (char *)(genPage * MEM_PAGESIZE), MEM_PAGESIZE);
+    // decrement reference counter since one has its own
+    ref_counters[parent_page] -= 1;
+  } else {
+    dbprintf('m', "MemoryRopHandler: Ref coutn is 1, inverting read only.\n");
+    // Reference counter is only one, so reset the readonly
+    pcb->pagetable[pg_fault_address] &= invert(MEM_PTE_READONLY);
+  }
+  dbprintf('m', "MemoryRopHandler: End.\n");
 }
 
 // Empty functions to get compile to work, referenced from piazza question
