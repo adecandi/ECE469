@@ -143,13 +143,12 @@ void ProcessFreeResources (PCB *pcb) {
   // STUDENT: Free any memory resources on process death here.
   //------------------------------------------------------------
   for (i = 0; i < MEM_L1PAGETABLE_SIZE; i++) {
-    pcb->pagetable[i] = 0;
     MemoryFreePage(pcb->pagetable[i]);
   }
-  MemoryFreePage(pcb->pagetable);
+  pcb->npages = 0;
+  MemoryFreePage(pcb->sysStackArea);
   pcb->sysStackArea = 0;
   MemoryFreePage(pcb->sysStackArea);
-
   ProcessSetStatus (pcb, PROCESS_STATUS_FREE);
 }
 
@@ -427,6 +426,33 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // equal to the last 4-byte-aligned address in physical page
   // for the system stack.
   //---------------------------------------------------------
+
+  //user and global data:
+  for (i = 0; i < 4; i++) {
+    pcb->pagetable[i] = MemoryAllocPage();
+    if (pcb->pagetable[i] == MEM_FAIL) {
+      printf("Error Could not allocate page \n");
+      exitsim();
+    }
+    pcb->pagetable[i] = MemorySetupPte(pcb->pagetable[i]);
+  }
+
+  //System Stak Frame
+  pcb->sysStackArea = MemoryAllocPage();
+  if (pcb->sysStackArea == MEM_FAIL) {
+    exitism();
+  }
+
+  pcb->sysStackArea = MemorySetupPte(sysStackArea) ^ 0x1;
+
+  //User stack
+  pcb->pagetable[256] = MemoryAllocPage();
+  if (pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER] == MEM_FAIL) {
+    printf("Error Could not allocate page \n");
+    exitism();
+  }
+
+
 
 
 
