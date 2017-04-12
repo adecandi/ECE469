@@ -440,16 +440,16 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   //System Stak Frame
   pcb->sysStackArea = MemoryAllocPage();
   if (pcb->sysStackArea == MEM_FAIL) {
-    exitism();
+    exitsim();
   }
 
-  pcb->sysStackArea = MemorySetupPte(sysStackArea) ^ 0x1;
+  pcb->sysStackArea = MemorySetupPte(pcb->sysStackArea) ^ 0x1;
 
   //User stack
   pcb->pagetable[256] = MemoryAllocPage();
   if (pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER] == MEM_FAIL) {
     printf("Error Could not allocate page \n");
-    exitism();
+    exitsim();
   }
 
 

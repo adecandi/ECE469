@@ -1,5 +1,6 @@
 #include "usertraps.h"
 #include "misc.h"
+#include "os/memory_constants.h"
 
 void main (int argc, char *argv[])
 {
@@ -27,8 +28,8 @@ void main (int argc, char *argv[])
     Exit();
   }
 
-  memory_location = 0x8765430;
-  Printf("part2 (%d): Accessing Memory Location: %d (decimal)\n", getpid(), memory_location);
+  mem_loc = (MEM_MAX_VIRTUAL_ADDRESS + 1);
+  Printf("part2 (%d): Accessing Memory Location: %d (decimal)\n", getpid(), mem_loc);
   Printf("part2 (%d): DONE!\n", getpid());
 
 }

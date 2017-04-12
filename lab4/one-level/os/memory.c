@@ -13,7 +13,7 @@
 
 // num_pages = size_of_memory / size_of_one_page
 static int freemapmax = MEM_NUM_PAGES / 32;
-static uint32 freemap[freemapmax];
+static uint32 freemap[15];
 static uint32 pagestart;
 static int nfreepages;
 
@@ -92,8 +92,8 @@ uint32 MemoryTranslateUserToSystem (PCB *pcb, uint32 addr) {
   uint32 page = MEM_ADDR2PAGE(addr);
   uint32 offset = MEM_ADDR2OFFS(addr);
 
-  if (pcb->pagetable[page] & PTE_MEM_PTE_VALID) {
-    return (offset | pcb->pagetable[page] & MEM_MASK_PTE2PAGE)
+  if (pcb->pagetable[page] & MEM_PTE_VALID) {
+    return ((offset | pcb->pagetable[page]) & MEM_MASK_PTE2PAGE);
   } else {
     return MEM_FAIL;
   }
@@ -143,7 +143,7 @@ int MemoryMoveBetweenSpaces (PCB *pcb, unsigned char *system, unsigned char *use
     // address.  MEM_PAGESIZE should be the size (in bytes) of 1 page of memory.
     // MEM_ADDRESS_OFFSET_MASK should be the bit mask required to get just the
     // "offset" portion of an address.
-    bytesToCopy = MEM_PAGESIZE - ((uint32)curUser & MEM_ADDRESS_OFFSET_MASK);
+    bytesToCopy = MEM_PAGESIZE - ((uint32)curUser & MEM_ADDR_OFFS_MASK);
     
     // Now find minimum of bytes in this page vs. total bytes left to copy
     if (bytesToCopy > n) {
@@ -218,8 +218,8 @@ int MemoryPageFaultHandler(PCB *pcb) {
     }
   } else {
     //SEG FAULT
-    dbprintf('m', "addr = %x\nsp = %x\n", addr, pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER]); 
-    printf("SegFault: killing processid %d\n. Addr: %x in page: %x\n.", GetCurrentPid(pcb), addr MEM_ADDR2PAGE(fault_address));
+    dbprintf('m', "addr = %x\nsp = %x\n", fault_address, pcb->currentSavedFrame[PROCESS_STACK_USER_STACKPOINTER]); 
+    printf("SegFault: killing processid %d\n. Addr: %x in page: %x\n.", GetCurrentPid(pcb), fault_address, MEM_ADDR2PAGE(fault_address));
     ProcessKill(pcb);
     return MEM_FAIL;
   }
@@ -234,14 +234,14 @@ int MemoryPageFaultHandler(PCB *pcb) {
 // Finds a free page in the freemap, allocates it and returns the number
 int MemoryAllocPage(void) {
   int i, j;
-  bool stop = 0;
+  int mapval;
   uint32 mask;
 
   for(i = 0; i < freemapmax; i++) {
     freemap[i] = 0;
     mask = 0x1;
     for(j = 0; j < 32; j++) {
-      if(freemap[i] & mask == 0) {
+      if((freemap[i] & mask) == 0) {
         mapval = (i * 32) + j;
         return mapval;
       }
@@ -270,3 +270,10 @@ void MemoryFreePage(uint32 page) {
   freemap[index] ^= 1 << bit;
 }
 
+void* malloc(PCB* pcb, int memsize) {
+  return NULL;
+}
+
+int mfree(PCB* pcb, void* ptr) {
+  return -1;
+}

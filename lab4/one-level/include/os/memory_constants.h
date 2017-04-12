@@ -26,7 +26,7 @@
 // The maximum allowable address in the virtual address space. Note that this 
 // is not the 4-byte-aligned address, but rather the actual maximum address 
 // (it should end with 0xF).
-#define MAX_VIRTUAL_ADDRESS 0xFFFF
+#define MEM_MAX_VIRTUAL_ADDRESS 0xFFFFF
 // Use a maximum physical memory size of 2MB
 #define MEM_MAX_SIZE 0x200000
 

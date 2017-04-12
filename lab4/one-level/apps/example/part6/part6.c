@@ -1,12 +1,13 @@
+// This will be spawned in groups of 30 by makeprocs
+
 #include "usertraps.h"
 #include "misc.h"
-#include "os/memory_constants.h"
 
 void main (int argc, char *argv[])
 {
   sem_t s_procs_completed; // Semaphore to signal the original process that we're done
-  int * mem_loc;  //memory location
-
+  int i;
+  
   if (argc != 2) { 
     Printf("Usage: %s <handle_to_procs_completed_semaphore>\n"); 
     Exit();
@@ -16,20 +17,23 @@ void main (int argc, char *argv[])
   s_procs_completed = dstrtol(argv[1], NULL, 10);
 
   // Now print a message to show that everything worked
-  Printf("part3 (%d): Testing valid but unallocated virtual address\n", getpid());
-  Printf("part3 (%d): START!\n", getpid());
+  Printf("part6 (%d): Looping to a large number\n", getpid());
+  Printf("part6 (%d): START!\n", getpid());
 
+  for(i =0; i<100000; i++) {
+
+  }
+
+  Printf("part6 (%d): Looping complete\n", getpid());
 
   // We signal the semaphore before the process is finished because this 
   // process will die
   // Signal the semaphore to tell the original process that we're done
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {
-    Printf("part3 (%d): Bad semaphore s_procs_completed (%d)!\n", getpid(), s_procs_completed);
+    Printf("part6 (%d): Bad semaphore s_procs_completed (%d)!\n", getpid(), s_procs_completed);
     Exit();
   }
 
-  mem_loc = (MEM_MAX_VIRTUAL_ADDRESS + 1 - MEM_PAGESIZE) - 4;
-  Printf("part3 (%d): Accessing Memory Location: %d (decimal)\n", getpid(), mem_loc);
-  Printf("part3 (%d): DONE!\n", getpid());
+  Printf("part6 (%d): DONE!\n", getpid());
 
 }
