@@ -1,16 +1,16 @@
 #include "usertraps.h"
 #include "misc.h"
 
-int fib(int x) {
-  if(x == 0) {return 0;}
-  if(x == 1) {return 1;}
-  return(fib(x-1) + fib(x-2));
+int rec(int n)
+{
+  if(n == 0) {return 0;}
+  return (1 + rec(n - 1));
 }
 
 void main (int argc, char *argv[])
 {
   sem_t s_procs_completed; // Semaphore to signal the original process that we're done
-  int x = 30;
+  int x = 10000;
   int out;
 
   if (argc != 2) { 
@@ -24,8 +24,7 @@ void main (int argc, char *argv[])
   // Now print a message to show that everything worked
   Printf("part4 (%d): Testing growing stack past 1 page!\n", getpid());
 
-  out = fib(x);
-  Printf("Fib digit %d = %d\n", x, out);
+  out = rec(x);
 
   // Signal the semaphore to tell the original process that we're done
   if(sem_signal(s_procs_completed) != SYNC_SUCCESS) {

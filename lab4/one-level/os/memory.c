@@ -209,9 +209,12 @@ int MemoryPageFaultHandler(PCB *pcb) {
   int pg_fault_addr = MEM_ADDR2PAGE(fault_addr);
   int pg_user_stack_ptr = MEM_ADDR2PAGE(user_stack_ptr);
   int vpage;
-  int newPage;
+  int generatedPage;
+
+  user_stack_ptr &= 0x1FF000;
 
   dbprintf('m', "MemoryPageFaultHandler (%d): Begin1\n", GetPidFromAddress(pcb));
+
   if(fault_addr < user_stack_ptr) {
     printf("Exiting PID %d: MemoryPageFaultHandler seg fault\n", GetPidFromAddress(pcb));
     dbprintf ('m', "MemoryPageFaultHandler (%d): seg fault addr=0x%x\n", GetPidFromAddress(pcb), fault_addr);
@@ -219,14 +222,14 @@ int MemoryPageFaultHandler(PCB *pcb) {
     return MEM_FAIL;
   }
   else {
-    dbprintf('z', "MemoryPageFaultHandler allocating new page\n");
     vpage = pg_fault_addr;
-    newPage = MemoryAllocPage();
-    if(newPage == MEM_FAIL) {
+    generatedPage = MemoryAllocPage();
+    if(generatedPage == MEM_FAIL) {
       printf("FATAL: not enough free pages for %d\n", GetPidFromAddress(pcb));
       ProcessKill();
     }
-    pcb->pagetable[vpage] = MemorySetupPte(newPage);
+    pcb->pagetable[vpage] = MemorySetupPte(generatedPage);
+    dbprintf('z', "MemoryPageFaultHandler PID (%d): allocating new page (%d)\n", GetPidFromAddress(pcb), generatedPage);
     pcb->npages += 1;
     return MEM_SUCCESS;
   }
