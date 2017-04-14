@@ -62,7 +62,7 @@ void MemoryModuleInit() {
   uint32 ospages = (lastosaddress & 0x1FFFFC) / MEM_PAGESIZE;
 
   dbprintf('m', "MemoryModuleInit:  begin");
-  printf("(MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32 = %d", (MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32);
+  //printf("(MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32 = %d", (MEM_MAX_SIZE >> MEM_L1FIELD_FIRST_BITNUM) / 32);
 
   nfreepages = MEM_NUM_PAGES - ospages;
   pagestart = ospages + 1;

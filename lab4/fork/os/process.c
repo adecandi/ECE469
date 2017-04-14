@@ -418,8 +418,9 @@ int ProcessRealFork(PCB * p_pcb) {
   c_pcb->sysStackPtr = stackframe;
   c_pcb->currentSavedFrame = stackframe;
 
-  stackframe[PROCESS_STACK_PTBASE] = (uint32)(&(c_pcb->pagetable[0]));
+  stackframe[PROCESS_STACK_PTBASE] = (uint32) &c_pcb->pagetable[0];
 
+  intrs = DisableIntrs();
   if((c_pcb->l = AQueueAllocLink(c_pcb)) == NULL) {
     printf("FATAL ERROR: couldn't get link for forked PCB!\n");
     exitsim();
@@ -429,6 +430,7 @@ int ProcessRealFork(PCB * p_pcb) {
     printf("FATAL ERROR: couldn't insert link into runQueue!\n");
     exitsim();
   }
+  RestoreIntrs(intrs);
 
   ProcessSetResult(c_pcb, 0);
   ProcessSetResult(p_pcb, GetPidFromAddress(c_pcb));
