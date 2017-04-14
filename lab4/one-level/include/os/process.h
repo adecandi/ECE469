@@ -79,6 +79,7 @@ extern PCB	*currentPCB;
 // grader knows that they are defined in this file.
 //---------------------------------------------------------
 #define PROCESS_FORK_FAIL -1
+#define PROCESS_FORK_SUCCESS 1
 
 
 //---------------------------------------------------------

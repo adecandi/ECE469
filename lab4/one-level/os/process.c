@@ -373,6 +373,65 @@ static void ProcessExit () {
 //	for user processes.
 //
 //----------------------------------------------------------------------
+
+int ProcessRealFork(PCB * p_pcb) {
+
+  PCB * c_pcb; //child PCB
+  //uint32 *stackframe;
+  uint32 GrabPg, offset;
+  int intrs, i;
+
+  intrs = DisableIntrs ();
+  dbprintf ('I', "Old interrupt value was 0x%x.\n", intrs);
+  dbprintf ('p', "Entering Process Real Fork, forking process: %d\n", GetPidFromAddress(p_pcb));
+
+  // Get a free PCB for the new process
+  if (AQueueEmpty(&freepcbs)) {
+    printf ("FATAL error: no free processes!\n");
+    exitsim (); // NEVER RETURNS!
+  }
+  c_pcb = (PCB *)AQueueObject(AQueueFirst (&freepcbs));
+  dbprintf ('p', "Got a link @ 0x%x\n", (int)(c_pcb->l));
+  if (AQueueRemove (&(c_pcb->l)) != QUEUE_SUCCESS) {
+    printf("FATAL ERROR: could not remove link from freepcbsQueue in ProcessFork!\n");
+    exitsim();
+  }
+  // This prevents someone else from grabbing this process
+  ProcessSetStatus (c_pcb, PROCESS_STATUS_RUNNABLE);
+
+  // At this point, the PCB is allocated and nobody else can get it.
+  // However, it's not in the run queue, so it won't be run.  Thus, we
+  // can turn on interrupts here.
+  RestoreIntrs (intrs);
+
+
+  //Mark the parent PCB's page table entries as read only
+  for (i = 0; i < MEM_L1PAGETABLE_SIZE; i++) {
+    p_pcb->pagetable[i] |= MEM_PTE_READONLY;
+    MemorySharePte(p_pcb->pagetable[i]);
+  }
+
+  //Cpopy parent to child
+  bcopy((char *)p_pcb, (char *)c_pcb, sizeof(PCB));
+
+  //System Stack:
+  //Grab a page
+  GrabPg = MemoryAllocPage();
+  if (GrabPg == MEM_FAIL) {
+    printf("Error Could not allocate page \n");
+    exitsim();
+  }
+
+  c_pcb->sysStackArea = GrabPg * MEM_PAGESIZE;
+  offset = p_pcb->currentSavedFrame[PROCESS_STACK_PREV_FRAME] - p_pcb->sysStackArea;
+  c_pcb->sysStackPtr = (uint32 *) (c_pcb->sysStackArea + offset);
+
+
+
+
+}
+
+
 int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   int i;                   // Loop index variable
   int fd, n;               // Used for reading code from files.
