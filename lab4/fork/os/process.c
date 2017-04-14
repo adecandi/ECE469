@@ -358,7 +358,7 @@ static void ProcessExit () {
   exit ();
 }
 
-
+
 
 int ProcessRealFork(PCB * parent) {
 
@@ -435,7 +435,23 @@ int ProcessRealFork(PCB * parent) {
   ProcessSetResult(child, 0);
   ProcessSetResult(parent, GetPidFromAddress(child));
 
+  //Test prints Valid Pte's for parent and child.
+  printf("Printing Valid PTE's for parent Process:\n");
+  ProcessPrintFork(parent);
+  printf("Printing Valid PTE's for child Process:\n");
+  ProcessPrintFork(child);
+
   return PROCESS_FORK_SUCCESS;
+}
+
+//Test Prints for Process Fork:
+void ProcessPrintFork(PCB * pcb) {
+  printf("Printing Valid PTE's for process (PID): %d\n", GetPidFromAddress(pcb));
+  for (i = 0; i < MEM_L1PAGETABLE_SIZE; i++) {
+    if (pcb->pagetable[i] & MEM_PTE_VALID) {
+      printf("Page table entry: %d, at index: %d, is valid", pcb->pagetable[i], i);
+    }
+  }
 }
 
 //----------------------------------------------------------------------
