@@ -267,9 +267,10 @@ _mfree:
         jr      r31
 .endproc _mfree
 
+
 .proc _fork
 .global _fork
 _fork:
-		traps	#0x430
-		jr		r32
+		trap	#0x430
+		jr		r31
 .endproc _fork
