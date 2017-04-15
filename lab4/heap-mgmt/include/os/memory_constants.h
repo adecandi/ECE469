@@ -42,9 +42,21 @@
 #define MEM_MASK_PTE2PAGE (~(MEM_PTE_READONLY | MEM_PTE_DIRTY | MEM_PTE_VALID))
 #define MEM_NUM_PAGES (MEM_MAX_SIZE / MEM_PAGESIZE)
 #define MEM_ADDR_OFFS_MASK (MEM_PAGESIZE - 1)
+#define MEM_NUM_NODES 255
 
 // Conversions
 #define MEM_ADDR2PAGE(address) ((address) >> MEM_L1FIELD_FIRST_BITNUM)
 #define MEM_ADDR2OFFS(address) ((address) & MEM_ADDR_OFFS_MASK)
+
+typedef struct Node {
+	struct Node *parent;
+	struct Node *left;
+	struct Node *right;
+	int size;
+	int index;
+	int inuse;
+	int order;
+	int address;
+} Node;
 
 #endif	// _memory_constants_h_

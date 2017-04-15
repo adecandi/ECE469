@@ -211,7 +211,6 @@ int MemoryPageFaultHandler(PCB *pcb) {
   uint32 fault_addr = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
   // corresponding pages for the addresses
   int pg_fault_addr = MEM_ADDR2PAGE(fault_addr);
-  int pg_user_stack_ptr = MEM_ADDR2PAGE(user_stack_ptr);
   int genPage;
 
   user_stack_ptr &= 0x1FF000;

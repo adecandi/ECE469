@@ -435,9 +435,9 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
   // for the system stack.
   //---------------------------------------------------------
 
-  pcb->npages = 4;
+  pcb->npages = 5;
   //user and global data:
-  for (i = 0; i < 4; i++) {
+  for (i = 0; i < 5; i++) {
     GrabPg = MemoryAllocPage();
     if (GrabPg == MEM_FAIL) {
       printf("Error could not allocate page \n");
@@ -445,6 +445,19 @@ int ProcessFork (VoidFunc func, uint32 param, char *name, int isUser) {
     }
     pcb->pagetable[i] = MemorySetupPte(GrabPg);
   }
+
+  // Setup all of the nodes in the heap array
+  for (i = 1; i < MEM_NUM_NODES; i++) {
+    pcb->heap_array[i].parent = NULL;   pcb->heap_array[i].left = NULL;
+    pcb->heap_array[i].right = NULL;    pcb->heap_array[i].index = i;
+    pcb->heap_array[i].size = 0;        pcb->heap_array[i].inuse = 0;
+    pcb->heap_array[i].order = -1;      pcb->heap_array[i].address = -1;
+  }
+  
+  // Setup the root node (indexed at 1 for convenience)
+  pcb->heap_array[1].size = MEM_PAGESIZE;
+  pcb->heap_array[1].address = 0;
+  pcb->heap_array[1].order = 7;
 
   //User stack frame
   pcb->npages += 1;

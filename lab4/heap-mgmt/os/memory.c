@@ -211,7 +211,6 @@ int MemoryPageFaultHandler(PCB *pcb) {
   uint32 fault_addr = pcb->currentSavedFrame[PROCESS_STACK_FAULT];
   // corresponding pages for the addresses
   int pg_fault_addr = MEM_ADDR2PAGE(fault_addr);
-  int pg_user_stack_ptr = MEM_ADDR2PAGE(user_stack_ptr);
   int genPage;
 
   user_stack_ptr &= 0x1FF000;
@@ -296,14 +295,178 @@ void MemoryFreePage(uint32 page) {
   MemoryEditFreemap(page, 1);
   // free page now open
   nfreepages += 1;
-  dbprintf ('m',"Freeing page 0x%x, %d remaining.\n", page, nfreepages);
+  //dbprintf ('m',"Freeing page 0x%x, %d remaining.\n", page, nfreepages);
 }
 
-// Empty functions to get compile to work, referenced from piazza question
 void* malloc(PCB* pcb, int memsize) {
+  int block, size, virtual_address, physical_address;
+
+  dbprintf('m', "malloc: function started\n");
+
+  if ((memsize <= 0) || (memsize > MEM_PAGESIZE)) {
+    return NULL;
+  }
+  // First try and find a suitable node
+  block = MemoryNodeSearch(&(pcb->heap_array[1]), memsize);
+  if (block >= 0) {
+    // We have a good node, send it home
+    size = pcb->heap_array[block].size;
+    virtual_address = ((MEM_PAGESIZE * 4) | block);
+    physical_address = MemoryTranslateUserToSystem(pcb, virtual_address);
+    printf("Created a heap block of size %d bytes: virtual address %d, physical address %d\n", size, virtual_address, physical_address);
+    return (void *) virtual_address;
+  }
+  // Second try and split to get a suitable node
+  block = MemorySplitNode(&(pcb->heap_array[1]), pcb, memsize);
+  if (block >= 0) {
+    // We have a good node, send it home
+    size = pcb->heap_array[block].size;
+    virtual_address = ((MEM_PAGESIZE * 4) | block);
+    physical_address = MemoryTranslateUserToSystem(pcb, virtual_address);
+    printf("Created a heap block of size %d bytes: virtual address %d, physical address %d\n", size, virtual_address, physical_address);
+    return (void *) virtual_address;
+  } 
   return NULL;
 }
 
-int mfree(PCB* pcb, void* ptr) {
-  return -1;
+int MemoryNodeSearch(Node * node, int memsize) {
+  int temp_node;
+
+  dbprintf('m', "MemoryNodeSearch: function started\n");
+
+  // Sanity check
+  if (node == NULL) return -1;
+  // Check which nodes are in use
+  if ((node->left == NULL) && (node->inuse == 0)) {
+    if ((memsize <= node->size) && (memsize > (node->size / 2))) {
+      // Hey we got a good one, send her home
+      node->inuse = 1;
+      printf("Allocated the block: order = %d, addr = %d, requested mem size = %d, block size = %d\n", node->order, node->address, memsize, node->size);
+      return node->address;
+    } else {
+      return -1;
+    }
+  }
+  // Recurse to get through the tree
+  temp_node = MemoryNodeSearch(node->left, memsize);
+  if (temp_node >= 0) {
+    return temp_node;
+  } else {
+    return MemoryNodeSearch(node->right, memsize);
+  }
 }
+
+int MemorySplitNode(Node * node, PCB* pcb, int memsize) {
+  int temp_node;
+  Node * left, right;
+
+  dbprintf('m', "MemorySplitNode: function started\n");
+
+  // Check for a valid node
+  if (node == NULL) return -1;
+  // Make sure it's not in use 
+  if ((node->left == NULL) && (node->inuse == 0)) {
+    // Check node size
+    if ((memsize <= node->size) && (memsize > (node->size / 2))) {
+      // We got a good node, send it home
+      node->inuse = 1;    
+      printf("Allocated the block: order = %d, address = %d, requested mem size = %d, block size = %d\n", node->order, node->address, memsize, node->size);
+      return node->address;
+    } 
+    if ((node->size / 2) < memsize) {
+      return -1;
+    } else {
+      if (node->order == 0) {
+        return -1;
+      } else {
+        // Create left child
+        left = &(pcb->heap_array[2*node->index]);
+        left->parent = node;
+        left->left = NULL;
+        left->right = NULL;           
+        left->size = node->size / 2;
+        left->order = node->order - 1;
+        left->address = node->address;  
+        printf("Created a left child node (order = %d, address = %d, size = %d) of parent (order = %d, address = %d, size = %d)\n", left->order, left->address, left->size, node->order, node->address, node->size);
+        // Create right child
+        right = &(pcb->heap_array[2*node->index+1]);
+        right->parent = node;
+        right->left = NULL;
+        right->right = NULL;
+        right->size = node->size / 2;
+        right->order = node->order - 1;
+        right->address = node->address + right->size; 
+        printf("Created a right child node (order = %d, address = %d, size = %d) of parent (order = %d, address = %d, size = %d)\n", right->order, right->address, right->size, node->order, node->address, node->size);
+        // Set the nodes
+        node->left = left;
+        node->right = right;
+      }
+    }
+  }
+  // Recurse through to get the correct piece
+  temp_node = MemorySplitNode(node->left, pcb, memsize);
+  if (temp_node >= 0) {
+    return temp_node;
+  } else {
+    return MemorySplitNode(node->right, pcb, memsize);
+  }
+}
+
+int mfree(PCB* pcb, void* ptr) {
+  int heap_address, i, size;
+  Node * node;
+
+  dbprintf('m', "mfree: function started\n");
+
+  // Couple of sanity checks
+  if (ptr == NULL) return MEM_FAIL;
+  if ((((int)ptr >= (5 * MEM_PAGESIZE)) || ((int)ptr < (4 * MEM_PAGESIZE)))) return MEM_FAIL;
+
+  // Grab the heap address
+  heap_address = ((int)ptr & (MEM_PAGE_OFFSET_MASK));
+
+  // Find the matching node in the heap array
+  for(i = 1; i < MEM_NUM_NODES; i++) {
+    if (pcb->heap_array[i].address == heap_address) {
+      node = &(pcb->heap_array[i]);
+      size = pcb->heap_array[i].size;
+    }
+  }
+
+  // Start the coalescing function to bring buddies together
+  MemoryCoalescing(node);
+  printf("Freeing heap block of size %d bytes: virtual address %d, physical address %d.\n", size, (int)ptr, MemoryTranslateUserToSystem(pcb, (int)ptr));
+  return node->size;
+}
+
+void MemoryCoalescing(Node * node) {
+  if (node == NULL) return;
+
+  // Reset items
+  node->inuse = 0;
+  node->left = NULL;
+  node->right = NULL;
+
+  dbprintf('m', "MemoryCoalescing: function started\n");
+
+  if (node->parent != NULL) {
+    // Check for child nodes
+    if (node->parent->left == node) {
+      // Check for right side buddy
+      if (node->parent->right->inuse == 0) {
+        printf("Coalesced buddy nodes (order = %d, addr = %d, size = %d) & (order = %d, addr = %d, size = %d)\n", node->order, node->address, node->size, node->parent->right->order, node->parent->right->address, node->parent->right->size);
+        printf("into the parent node (order = %d, addr = %d, size = %d)\n", node->parent->order, node->parent->address, node->parent->size);
+        MemoryCoalescing(node->parent);
+      }
+    } else {
+      // Check for left side buddy
+      if (node->parent->left->inuse == 0) {
+        printf("Coalesced buddy nodes (order = %d, addr = %d, size = %d) & (order = %d, addr = %d, size = %d)\n", node->parent->left->order, node->parent->left->address, node->parent->left->size, node->order, node->address, node->size);
+        printf("into the parent node (order = %d, addr = %d, size = %d)\n", node->parent->order, node->parent->address, node->parent->size);
+        MemoryCoalescing(node->parent);
+      }
+    }
+  }
+}
+
+

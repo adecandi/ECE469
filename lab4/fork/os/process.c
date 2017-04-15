@@ -409,6 +409,7 @@ int ProcessRealFork(PCB * parent) {
     return PROCESS_FORK_FAIL;
   }
 
+  // Setup child systackarea * frame
   child->sysStackArea = GrabPg * MEM_PAGESIZE;
   bcopy((char *)(parent->sysStackArea), (char *)(child->sysStackArea), MEM_PAGESIZE);
 
@@ -436,9 +437,9 @@ int ProcessRealFork(PCB * parent) {
   ProcessSetResult(parent, GetPidFromAddress(child));
 
   //Test prints Valid Pte's for parent and child.
-  printf("Printing Valid PTE's for parent Process:\n");
+  printf("ProcessRealFork: Printing Valid PTE's for parent Process:\n");
   ProcessPrintFork(parent);
-  printf("Printing Valid PTE's for child Process:\n");
+  printf("ProcessRealFork: Printing Valid PTE's for child Process:\n");
   ProcessPrintFork(child);
 
   return PROCESS_FORK_SUCCESS;
@@ -446,12 +447,19 @@ int ProcessRealFork(PCB * parent) {
 
 //Test Prints for Process Fork:
 void ProcessPrintFork(PCB * pcb) {
-  printf("Printing Valid PTE's for process (PID): %d\n", GetPidFromAddress(pcb));
+  int i;
+  int numprint = 0;
+  printf("Valid PTE's for process after fork (PID): %d\n\t", GetPidFromAddress(pcb));
   for (i = 0; i < MEM_L1PAGETABLE_SIZE; i++) {
     if (pcb->pagetable[i] & MEM_PTE_VALID) {
-      printf("Page table entry: %d, at index: %d, is valid", pcb->pagetable[i], i);
+      if((numprint % 2 == 0) && numprint > 0) {
+        printf("\n\t");
+      }
+      numprint++;
+      printf("PTE: %d | INDEX: %d \t\t", pcb->pagetable[i], i);
     }
   }
+  printf("\n");
 }
 
 //----------------------------------------------------------------------

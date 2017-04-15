@@ -42,6 +42,7 @@ typedef struct PCB {
   uint32	pagetable[MEM_L1PAGETABLE_SIZE]; // Statically allocated page table
   int		npages;		// Number of pages allocated to this process
   Link		*l;		// Used for keeping PCB in queues
+  Node heap_array[MEM_NUM_NODES + 1];
 } PCB;
 
 extern PCB	*currentPCB;

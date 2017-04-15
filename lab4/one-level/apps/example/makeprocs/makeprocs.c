@@ -48,35 +48,35 @@ void main (int argc, char *argv[])
   // on the command line, so we must first convert them from ints to strings.
   ditoa(s_procs_completed, s_procs_completed_str);
 
-  if(proc_sel == 1 || proc_sel == 0) {
+  if(proc_sel == 1 ) {
     Printf("-------------------------------------------------------------------------------------\n");
     Printf("makeprocs (%d): part1\n", getpid());
     Printf("makeprocs (%d): Creating hello world\n", getpid());
     process_create(part1, s_procs_completed_str, NULL);
   } 
 
-  if(proc_sel == 2 || proc_sel == 0) {
+  if(proc_sel == 2 ) {
     Printf("-------------------------------------------------------------------------------------\n");
     Printf("makeprocs (%d): part2\n", getpid());
     Printf("makeprocs (%d): Creating process to test access beyond max\n", getpid());
     process_create(part2, s_procs_completed_str, NULL);
   }
 
-  if(proc_sel == 3 || proc_sel == 0) {
+  if(proc_sel == 3 ) {
     Printf("-------------------------------------------------------------------------------------\n");
     Printf("makeprocs (%d): part3\n", getpid());
     Printf("makeprocs (%d): Creating process to test unallocated\n", getpid());
     process_create(part3, s_procs_completed_str, NULL);
   } 
 
-  if(proc_sel == 4 || proc_sel == 0) {
+  if(proc_sel == 4 ) {
     Printf("-------------------------------------------------------------------------------------\n");
     Printf("makeprocs (%d): part3\n", getpid());
     Printf("makeprocs (%d): Creating process to test unallocated\n", getpid());
     process_create(part4, s_procs_completed_str, NULL);
   } 
 
-  if(proc_sel == 5 || proc_sel == 0) {
+  if(proc_sel == 5 ) {
     Printf("-------------------------------------------------------------------------------------\n");
     Printf("makeprocs (%d): part5\n", getpid());
     Printf("makeprocs (%d): Creating 100 hello worlds\n", getpid());
@@ -85,7 +85,7 @@ void main (int argc, char *argv[])
     }
   }
 
-  if(proc_sel == 6 || proc_sel == 0) {
+  if(proc_sel == 6 ) {
     Printf("-------------------------------------------------------------------------------------\n");
     Printf("makeprocs (%d): part6\n", getpid());
     Printf("makeprocs (%d): Creating 30 processes looping to high numbers\n", getpid());
