@@ -3,8 +3,8 @@
 
 #include "fdisk.h"
 
-//dfs_superblock sb;
-//dfs_inode inodes[DFS_INODE_MAX_NUM];
+dfs_superblock sb;
+dfs_inode inodes[DFS_INODE_MAX_NUM];
 //uint32 fbv[DFS_FBV_MAX_NUM_WORDS];
 
 int diskblocksize = 0; // These are global in order to speed things up
@@ -18,12 +18,30 @@ void main (int argc, char *argv[])
 	// STUDENT: put your code here. Follow the guidelines below. They are just the main steps. 
 	// You need to think of the finer details. You can use bzero() to zero out bytes in memory
 
-  //Initializations and argc check
+  //Initializations and argc
 
+  //Initiializations:
+  dfs_block new_block;
+  //disksize = disk_size();
+  //diskblocksize = disk_blocksize();
+
+
+  //argc
+  if (argc != 1) {
+    Printf("Error incorrect arguement numbers");
+  }
   // Need to invalidate filesystem before writing to it to make sure that the OS
   // doesn't wipe out what we do here with the old version in memory
   // You can use dfs_invalidate(); but it will be implemented in Problem 2. You can just do 
   // sb.valid = 0
+
+  //dfs_invalidate();
+  sb.valid = 0;
+  sb.dfs_blocksize = DFS_BLOCK_SIZE;
+  sb.dfs_numblocks = FDISK_NUM_BLOCKS;
+  sb.dfs_start_block_inodes = FDISK_INODE_BLOCK_START;
+  sb.num_inodes = FDISK_NUM_INODES;
+
 
   //disksize = 
   //diskblocksize = 
