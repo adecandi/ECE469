@@ -6,9 +6,11 @@
 #include "dfs.h"
 #include "synch.h"
 
-//static dfs_inode inodes[/*specify size*/ ]; // all inodes
-//static dfs_superblock sb; // superblock
+static dfs_inode inodes[]; // all inodes
+static dfs_superblock sb; // superblock
 //static uint32 fbv[/*specify size*/]; // Free block vector
+
+//Locks
 
 static uint32 negativeone = 0xFFFFFFFF;
 static inline uint32 invert(uint32 n) { return n ^ negativeone; }
@@ -31,6 +33,8 @@ static inline uint32 invert(uint32 n) { return n ^ negativeone; }
 void DfsModuleInit() {
 // You essentially set the file system as invalid and then open 
 // using DfsOpenFileSystem().
+	DfsInavlidate();
+	DfsOpenFileSystem();
 
 }
 
@@ -44,7 +48,7 @@ void DfsModuleInit() {
 void DfsInvalidate() {
 // This is just a one-line function which sets the valid bit of the 
 // superblock to 0.
-
+	sb.valid = 0;
 }
 
 //-------------------------------------------------------------------
@@ -55,19 +59,41 @@ void DfsInvalidate() {
 
 int DfsOpenFileSystem() {
 //Basic steps:
+disk_block diskb;
+dfs_block new_block;
 // Check that filesystem is not already open
-
+if (sb.valid) {
+	printf("Error File System is already open");
+	return DFS_FAIL;
+}
 // Read superblock from disk.  Note this is using the disk read rather 
 // than the DFS read function because the DFS read requires a valid 
 // filesystem in memory already, and the filesystem cannot be valid 
 // until we read the superblock. Also, we don't know the block size 
 // until we read the superblock, either.
+if(DiskReadBlock(1, &diskb) == DISK_FAIL) {
+	printf("Error reading from disk in DfsOpenFileSystem");
+	return DFS_FAIL;
+}
 
 // Copy the data from the block we just read into the superblock in memory
 
+bcopy(diskb.data, (char *)&sb, sizeof(sb));
 // All other blocks are sized by virtual block size:
 // Read inodes
+char * inodebytes = (char *) inodes;
+for (i = sb.dfs_start_block_inodes; i < sb.dsf_start_block_fbv; i++) {
+	bzero(new_block.data, sb.dfs_blocksize);
+	DfsReadBlock(i, &new_block);
+	bcopy(new_block.data, inodebytes[(i - 1) * sb.dfs_blocksize], sb.dfs_blocksize);
+}
 // Read free block vector
+for (i = sb.dfs_start_block_fbv; i < sb.dfs_start_block_data; i++) {
+	bzero(new_block.data, sb.dfs_blocksize);
+	DfsReadBlock(i, &new_block);
+	bcopy(new_block.data, inodebytes[(i - 1) * sb.dfs_blocksize], sb.dfs_blocksize);
+}
+
 // Change superblock to be invalid, write back to disk, then change 
 // it back to be valid in memory
 

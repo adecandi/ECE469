@@ -13,6 +13,17 @@ int disksize = 0;      // (i.e. fewer traps to OS to get the same number)
 int FdiskWriteBlock(uint32 blocknum, dfs_block *b); //You can use your own function. This function 
 //calls disk_write_block() to write physical blocks to disk
 
+inline
+void
+SetFBV (int p, int b)
+{
+  uint32  wd = p / 32;
+  uint32  bitnum = p % 32;
+
+  fbv[wd] = (fbv[wd] & invert(1 << bitnum)) | (b << bitnum);
+  dbprintf ('m', "Set fbv entry %d to 0x%x.\n", wd, fbv[wd]);
+}
+
 void main (int argc, char *argv[])
 {
 	// STUDENT: put your code here. Follow the guidelines below. They are just the main steps. 
@@ -43,6 +54,7 @@ void main (int argc, char *argv[])
   sb.dfs_start_block_inodes = FDISK_INODE_BLOCK_START;
   sb.num_inodes = FDISK_NUM_INODES;
   sb.dfs_start_block_fbv = FDISK_FBV_BLOCK_START;
+  sb.dfs_start_block_data = FDISK_FBV_BLOCK_START + (DFS_FBV_MAX_NUM_WORDS * 4)/DFS_BLOCK_SIZE;
 
 
 
@@ -71,15 +83,36 @@ void main (int argc, char *argv[])
     }
   }
 
+  //Write them in as 0
+  for (i = FDISK_INODE_BLOCK_START; i < FDISK_INODE_NUM_BLOCKS; i++) {
+    bzero(new_block.data, sb.dfs_blocksize);
+    FdiskWriteBlock(i, &new_block);
+  }
+
   //setup free block vector fbv
   for (i = 0; i < DFS_FBV_MAX_NUM_WORDS; i++) {
     fbv[i] = 0;
   }
+  //free the data blocks
+  for (i = sb.dfs_start_block_data; i < sb.dfs_numblocks; i++) {
+    setFBV(i, 1);
+  }
+
+  //Write fbv to disk (block number 17 and 18)
+  for (i = sb.dfs_start_block_fbv; i < sb.dfs_start_block_data; i++) {
+    bzero(new_block.data, sb.dfs_blocksize);
+    bcopy( &((char*)(fbv[i - sb.dfs_start_block_fbv * (sb.dfs_blocksize / 4)])), new_block.data, sb.dfs_blocksize);
+    FdiskWriteBlock(i, &new_block);
+  }
 
   //Set superblock as valid file system and write superblock and boot record to disk
   sb.valid = 1;
-  
 
+  //write superblock to block 0 in disk
+  bzero(new_block.data, sb.dfs_blocksize);
+  //must go into second physical block, so second half of dfs block
+  bcopy((char *)(&sb), &(new_block[diskblocksize]), sizeof(sb));
+  FdiskWriteBlock(0, &new_block);
 
 
 

@@ -8,6 +8,7 @@ typedef struct dfs_superblock {
   	uint32 dfs_start_block_inodes; //the starting file system block number for the array of inodes
   	uint32 num_inodes; //Number of inodes in the inode array
   	uint32 dfs_start_block_fbv; //the starting file system block number of the free block vector
+  	uint32 dfs_start_block_data; // starting file system block number for data
 
 } dfs_superblock;
 
@@ -18,8 +19,8 @@ typedef struct dfs_block {
 } dfs_block;
 
 
-//inode needs to be 128 bytes, currently uses 53 bytes m max file name = 128-53 = 75
-#define DFS_MAX_FILENAME_SIZE 76
+//inode needs to be 96 bytes, currently uses 53 bytes m max file name = 96-53 = 43
+#define DFS_MAX_FILENAME_SIZE 44
 typedef struct dfs_inode {
   // STUDENT: put inode structure internals here
   // IMPORTANT: sizeof(dfs_inode) MUST return 128 in order to fit in enough
@@ -34,6 +35,8 @@ typedef struct dfs_inode {
 } dfs_inode;
 
 #define DFS_MAX_FILESYSTEM_SIZE 0x1000000  // 16MB
+
+#define DFS_NUM_INODES 192 
 
 #define DFS_FAIL -1
 #define DFS_SUCCESS 1
