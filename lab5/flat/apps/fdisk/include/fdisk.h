@@ -16,6 +16,5 @@ typedef unsigned int uint32;
 #endif
 
 //STUDENT: define additional parameters here, if any
-#define FDISK_NUM_BLOCKS DFS_MAX_FILESYSTEM_SIZE / DFS_BLOCKSIZE 
-#define DFS_FBV_MAX_NUM_WORDS FDISK_NUM_BLOCKS / 32;
+#define FDISK_NUM_BLOCKS DFS_NUM_BLOCKS;
 #endif
