@@ -645,6 +645,7 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
 		}
 		curr_byte += bytestowrite;
 		bytes_written += bytestowrite;
+		dbprintf('Q', "DfsInodeWriteBytes: curr_byte = %d, bytes_written: %d, num_bytes: %d.\n", curr_byte, bytes_written, num_bytes);
 	}
 
 	if (inodes[handle].filesize < start_byte + bytes_written) {
