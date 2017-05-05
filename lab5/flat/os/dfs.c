@@ -666,13 +666,13 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
 uint32 DfsInodeFilesize(uint32 handle) {
 	//Check if file system is valid
 	if (!sb.valid) {
-		printf("DfsInodeWriteBytes: Error cannot write num_bytes into mem if file system is invalid\n");
+		printf("DfsInodeFilesize: Error cannot get filesize if file system is invalid\n");
 		return DFS_FAIL;
 	}
 
 	//Check if inode is valid
 	if (!inodes[handle].inuse) {
-		printf("DfsInodeWriteBytes: Error cannot write num_bytes into mem if inode is not in use\n");
+		printf("DfsInodeFilesize: Error cannot get filesize if inode is not in use\n");
 		return DFS_FAIL;
 	}
 
