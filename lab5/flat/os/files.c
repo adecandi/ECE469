@@ -11,23 +11,23 @@
 // STUDENT: put your file-level functions here
 
 void FileModuleInit() {
-
+	return -1;
 }
 int FileOpen(char *filename, char *mode) {
-	return 0;
+	return -1;
 }
 int FileClose(int handle) {
-	return 0;
+	return -1;
 }
 int FileRead(int handle, void *mem, int num_bytes) {
-	return 0;
+	return -1;
 }
 int FileWrite(int handle, void *mem, int num_bytes) {
-	return 0;
+	return -1;
 }
 int FileSeek(int handle, int num_bytes, int from_where) {
-	return 0;
+	return -1;
 }
 int FileDelete(char *filename) {
-	return 0;
+	return -1;
 }

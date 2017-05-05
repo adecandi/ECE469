@@ -6,7 +6,7 @@
 #include "misc.h"
 
 void RunOSTests() {
-	/*int fhandle;
+	int fhandle;
 	char mellow[] = "mellow";
 	char yellow[] = "yellow";
 	char jello[] = "jello";
@@ -77,5 +77,5 @@ void RunOSTests() {
 
   printf("---- Deleting hello file\n");
   DfsInodeDelete(fhandle);
-	printf("================= End ostests\n\n");*/
+	printf("================= End ostests\n\n");
 }

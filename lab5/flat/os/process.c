@@ -831,6 +831,7 @@ void main (int argc, char *argv[])
   for (i = 0; i < 100; i++) {
     buf[i] = 'a';
   }
+  //dbprintf('Q'', "process.c main\n");
   i = FsOpen ("vm", FS_MODE_WRITE);
   dbprintf ('i', "VM Descriptor is %d\n", i);
   FsSeek (i, 0, FS_SEEK_SET);

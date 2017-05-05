@@ -30,7 +30,7 @@ void main (int argc, char *argv[])
 	// You need to think of the finer details. You can use bzero() to zero out bytes in memory
 
   // Declarations:
-  int i,j;
+  int i;
   dfs_block new_block;
 
   //argc
@@ -44,22 +44,21 @@ void main (int argc, char *argv[])
   // You can use dfs_invalidate(); but it will be implemented in Problem 2. You can just do 
   // sb.valid = 0
 
-  dfs_invalidate();
+  disksize = disk_size();
+  diskblocksize = disk_blocksize();
+
+  //dfs_invalidate();
   sb.valid = 0;
-  sb.dfs_blocksize = DFS_BLOCKSIZE;
+  sb.dfs_blocksize = FDISK_FS_BLOCKSIZE;
   sb.dfs_numblocks = FDISK_NUM_BLOCKS;
   sb.dfs_start_block_inodes = FDISK_INODE_BLOCK_START;
   sb.num_inodes = FDISK_NUM_INODES;
   sb.dfs_start_block_fbv = FDISK_FBV_BLOCK_START;
   sb.dfs_start_block_data = FDISK_FBV_BLOCK_START + (DFS_FBV_MAX_NUM_WORDS * 4) / DFS_BLOCKSIZE;
 
-  disksize = disk_size();
-  diskblocksize = disk_blocksize();
-
   // Make sure the disk exists before doing anything else
   if (disk_create() == DISK_FAIL) {
     Printf("Unable to create disk.\n");
-
   }
 
   // Write all inodes as not in use and empty (all zeros)
@@ -67,19 +66,13 @@ void main (int argc, char *argv[])
   // Finally, setup superblock as valid filesystem and write superblock and boot record to disk: 
   // boot record is all zeros in the first physical block, and superblock structure goes into the second physical block
 
-  //Initialize inodes
-  for (i = 0; i < FDISK_NUM_INODES; i++) {
-    inodes[i].inuse = 0;
-    inodes[i].filesize = 0;
-    inodes[i].indirect_block = 0;
-    for (j = 0; j < 10; j++) {
-      inodes[i].virt_blocks[j] = 0;
-    }
-  }
+  Printf("Disk created.\n");
+  Printf("Sizeof inode: %d\n", sizeof(dfs_inode));
+  Printf("Disk blocksize: %d FS blocksize: %d\n", diskblocksize, sb.dfs_blocksize);
 
   //Write them in as 0
-  for (i = FDISK_INODE_BLOCK_START; i < FDISK_INODE_NUM_BLOCKS; i++) {
-    bzero(new_block.data, sb.dfs_blocksize);
+  bzero(new_block.data, sb.dfs_blocksize);
+  for (i = sb.dfs_start_block_inodes; i < sb.dfs_start_block_fbv; i++) {
     FdiskWriteBlock(i, &new_block);
   }
 
@@ -94,8 +87,8 @@ void main (int argc, char *argv[])
 
   //Write fbv to disk (block number 17 and 18)
   for (i = sb.dfs_start_block_fbv; i < sb.dfs_start_block_data; i++) {
-    bzero(new_block.data, sb.dfs_blocksize);
-    bcopy( &(((char*)fbv)[(i - sb.dfs_start_block_fbv) * (sb.dfs_blocksize / 4)]), new_block.data, sb.dfs_blocksize);
+    //bzero(new_block.data, sb.dfs_blocksize);
+    bcopy( &(((char*)fbv)[(i - sb.dfs_start_block_fbv) * sb.dfs_blocksize]), new_block.data, sb.dfs_blocksize);
     FdiskWriteBlock(i, &new_block);
   }
 
@@ -109,7 +102,7 @@ void main (int argc, char *argv[])
   FdiskWriteBlock(0, &new_block);
 
 
-  Printf("fdisk (%d): Formatted DFS disk for %d bytes.\n", getpid(), disksize);
+  Printf("fdisk (%d): Formatted DFS disk for %d bytes. sb.valid=%d.\n", getpid(), disksize, sb.valid);
 }
 
 int FdiskWriteBlock(uint32 blocknum, dfs_block *b) {
@@ -118,10 +111,12 @@ int FdiskWriteBlock(uint32 blocknum, dfs_block *b) {
   disk_block db;
   int i, m;
   m = sb.dfs_blocksize / diskblocksize;
+  //Printf("Starting FdiskWriteBlock. blocknum=%d. m=%d\n", blocknum, m);
   for (i = 0; i < m; i++) {
     bcopy(&(b->data[i * diskblocksize]), db.data, diskblocksize);
-    if (disk_write_block(blocknum * m + i, &db.data) == DISK_FAIL) {
-      Printf("Unable to write physical block to disk.\n");
+    Printf("Writing to disk block: %d\n", blocknum * m + i);
+    if (disk_write_block(blocknum * m + i, &db) == DISK_FAIL) {
+      //Printf("Unable to write physical block to disk.\n");
       return DISK_FAIL;
     }
   }

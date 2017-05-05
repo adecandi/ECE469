@@ -40,6 +40,7 @@ int DiskCreate() {
     GracefulExit();
   }
   // Open the hard disk file
+  //dbprintf('Q', "DiskCreate, opening hard disk file...\n");
   if ((fsfd = FsOpen(DISK_FILENAME, FS_MODE_WRITE)) < 0) {
     printf ("DiskCreate: File system %s cannot be opened!\n", DISK_FILENAME);
     return DISK_FAIL;
@@ -87,6 +88,7 @@ int DiskWriteBlock (uint32 blocknum, disk_block *b) {
   intrvals = DisableIntrs();
 
   // Open the hard disk file
+  //dbprintf('Q', "DiskWriteBlock, opening hard disk file...\n");
   if ((fsfd = FsOpen(DISK_FILENAME, FS_MODE_RW)) < 0) {
     printf ("DiskWriteBlock: File system %s cannot be opened!\n", DISK_FILENAME);
     return DISK_FAIL;
@@ -131,6 +133,7 @@ int DiskReadBlock (uint32 blocknum, disk_block *b) {
   intrvals = DisableIntrs();
 
   // Open the hard disk file
+  //dbprintf('Q', "DiskReadBlock, opening hard disk file...\n");
   if ((fsfd = FsOpen(DISK_FILENAME, FS_MODE_READ)) < 0) {
     printf ("DiskReadBlock: File system %s cannot be opened!\n", DISK_FILENAME);
     return DISK_FAIL;

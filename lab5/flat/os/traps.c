@@ -561,6 +561,7 @@ static int TrapDiskWriteBlockHandler(uint32 *trapArgs, int sysMode) {
     blocknum = trapArgs[0];
     bcopy ((void *)(trapArgs[1]), (void *)&b, sizeof(disk_block)); // Copy message into local variable for simplicity
   }
+  //dbprintf('Q', "TrapDiskWriteBlockHandler. blocknum=%d\n", blocknum);
   return DiskWriteBlock(blocknum, &b);
 }
 
