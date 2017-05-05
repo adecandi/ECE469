@@ -6,14 +6,14 @@
 #include "dfs.h"
 #include "synch.h"
 
-static dfs_inode inodes[DFS_NUM_INODES]; // all inodes
-static dfs_superblock sb; // superblock
-static uint32 fbv[DFS_FBV_MAX_NUM_WORDS]; // Free block vector
+static dfs_inode inodes[DFS_NUM_INODES]; 			// all inodes
+static dfs_superblock sb; 							// superblock
+static uint32 fbv[DFS_FBV_MAX_NUM_WORDS]; 			// Free block vector
 
-
-
-static uint32 negativeone = 0xFFFFFFFF;
-static inline uint32 invert(uint32 n) { return n ^ negativeone; }
+static int negativeone = 0xFFFFFFFF;
+static inline uint32 invert (uint32 n) {
+  return (n ^ negativeone);
+}
 
 // You have already been told about the most likely places where you should use locks. You may use 
 // additional locks if it is really necessary.
@@ -23,9 +23,7 @@ static lock_t inode_lock;
 // STUDENT: put your file system level functions below.
 // Some skeletons are provided. You can implement additional functions.
 
-inline
-void
-SetFBV (int p, int b)
+inline void SetFBV (int p, int b)
 {
   uint32  wd = p / 32;
   uint32  bitnum = p % 32;
@@ -46,7 +44,7 @@ SetFBV (int p, int b)
 void DfsModuleInit() {
 // You essentially set the file system as invalid and then open 
 // using DfsOpenFileSystem().
-	DfsInavlidate();
+	DfsInvalidate();
 	fbv_lock = LockCreate();
 	inode_lock = LockCreate();
 	DfsOpenFileSystem();
@@ -73,9 +71,13 @@ void DfsInvalidate() {
 //-------------------------------------------------------------------
 
 int DfsOpenFileSystem() {
-	//Basic steps:
+	// Declarations
 	disk_block diskb;
 	dfs_block new_block;
+	char * inodebytes;
+	char * fbvbytes;
+	int i;
+
 	// Check that filesystem is not already open
 	if (sb.valid) {
 		printf("Error File System is already open");
@@ -96,24 +98,24 @@ int DfsOpenFileSystem() {
 	bcopy(diskb.data, (char *)&sb, sizeof(sb));
 	// All other blocks are sized by virtual block size:
 	// Read inodes
-	char * inodebytes = (char *) inodes;
-	for (i = sb.dfs_start_block_inodes; i < sb.dsf_start_block_fbv; i++) {
+	inodebytes = (char *) inodes;
+	for (i = sb.dfs_start_block_inodes; i < sb.dfs_start_block_fbv; i++) {
 		bzero(new_block.data, sb.dfs_blocksize);
 		if (DfsReadBlock(i, &new_block) == DFS_FAIL) {
 			printf("DfsOpenFileSystem: Error Reading dfs block for inodes");
 			return DFS_FAIL;
 		}
-		bcopy(new_block.data, inodebytes[(i - 1) * sb.dfs_blocksize], sb.dfs_blocksize);
+		bcopy(new_block.data, &(inodebytes[(i - 1) * sb.dfs_blocksize]), sb.dfs_blocksize);
 	}
 	// Read free block vector
-	char * fbvbytes = (char *) fbv;
+	fbvbytes = (char *) fbv;
 	for (i = sb.dfs_start_block_fbv; i < sb.dfs_start_block_data; i++) {
 		bzero(new_block.data, sb.dfs_blocksize);
 		if (DfsReadBlock(i, &new_block) == DFS_FAIL) {
 			printf("DfsOpenFileSystem: Error Reading dfs block for fbv");
 			return DFS_FAIL;
 		}
-		bcopy(new_block.data, fbvbytes[(i - 1) * sb.dfs_blocksize], sb.dfs_blocksize);
+		bcopy(new_block.data, &(fbvbytes[(i - 1) * sb.dfs_blocksize]), sb.dfs_blocksize);
 	}
 
 	// Change superblock to be invalid, write back to disk, then change 
@@ -121,7 +123,7 @@ int DfsOpenFileSystem() {
 	sb.valid = 0;
 	bzero(diskb.data, DISK_BLOCKSIZE);
 	bcopy((char *)&sb, diskb.data, sizeof(sb));
-	if ( DiskWrieBlock(1, &diskb) == DISK_FAIL ) {
+	if ( DiskWriteBlock(1, &diskb) == DISK_FAIL ) {
 		printf("DfsOpenFileSystem: Error Writing superblock back to disk");
 		return DFS_FAIL;
 	}
@@ -137,8 +139,11 @@ int DfsOpenFileSystem() {
 //-------------------------------------------------------------------
 
 int DfsCloseFileSystem() {
+	// Declarations
 	disk_block diskb;
 	dfs_block new_block;
+	char * inodebytes;
+	int i;
 
 	// Check that filesystem is not already closed
 	if (!sb.valid) {
@@ -147,10 +152,10 @@ int DfsCloseFileSystem() {
 	}
 
 	//Write Inodes:
-	char * inodebytes = (char *) inodes;
-	for (i = sb.dfs_start_block_inodes; i < sb.dsf_start_block_fbv; i++) {
+	inodebytes = (char *) inodes;
+	for (i = sb.dfs_start_block_inodes; i < sb.dfs_start_block_fbv; i++) {
 		bzero(new_block.data, sb.dfs_blocksize);
-		bcopy(inodes[(i-1) * sb.dfs_blocksize], new_block.data, sb.dfs_blocksize);
+		bcopy(&(inodebytes[(i-1) * sb.dfs_blocksize]), new_block.data, sb.dfs_blocksize);
 		if ( DfsWriteBlock(i, &new_block) == DFS_FAIL ) {
 			printf("DfsCloseFileSystem: Error writing inodes");
 			return DFS_FAIL;
@@ -160,7 +165,7 @@ int DfsCloseFileSystem() {
 	//Write fbv
 	for (i = sb.dfs_start_block_fbv; i < sb.dfs_start_block_data; i++) {
 		bzero(new_block.data, sb.dfs_blocksize);
-		bcopy(inodes[(i-1) * sb.dfs_blocksize], new_block.data, sb.dfs_blocksize);
+		bcopy(&(inodebytes[(i-1) * sb.dfs_blocksize]), new_block.data, sb.dfs_blocksize);
 		if ( DfsWriteBlock(i, &new_block) == DFS_FAIL ) {
 			printf("DfsCloseFileSystem: Error writing fbv");
 			return DFS_FAIL;
@@ -170,7 +175,7 @@ int DfsCloseFileSystem() {
 	//Write sb to disk
 	bzero(diskb.data, DISK_BLOCKSIZE);
 	bcopy((char *)&sb, diskb.data, sizeof(sb));
-	if (DiskWrieBlock(1, diskb.data) == DISK_FAIL) {
+	if (DiskWriteBlock(1, &diskb) == DISK_FAIL) {
 		printf("DfsCloseFileSystem: Error writing sb back to disk");
 		return DFS_FAIL;
 	}
@@ -188,10 +193,12 @@ int DfsCloseFileSystem() {
 
 uint32 DfsAllocateBlock() {
 	//Initializations:
-	int word = 0;
+	int word;
 	int bitnum;
 	uint32 v; //vector
 	// Check that file system has been validly loaded into memory
+	word = 0;
+
 	if (!sb.valid) {
 		printf("DfsAllocateBlock: Error cannot Allocate block if file system is invalid");
 		return DFS_FAIL;
@@ -201,7 +208,7 @@ uint32 DfsAllocateBlock() {
 	//Wait for lock
 	while(LockHandleAcquire(fbv_lock) != SYNC_SUCCESS);
 
-	for (bitnum = 0; (v & (1 << bitnum)) == 0; bitnum++) {
+	for (bitnum = 0; (v & (1 << bitnum)) == 0; bitnum++) { }
 
 	//Find first free block
 	while (fbv[word] == 0) {
@@ -216,7 +223,7 @@ uint32 DfsAllocateBlock() {
 	v = fbv[word];
 	for (bitnum = 0; (v & (1 << bitnum)) == 0; bitnum++) {
     }
-    fbv[word]  &= invert(1 << bit_position);
+    fbv[word]  &= invert(1 << bitnum);
    	//Find handle
     v = (word * 32) + bitnum;
     dbprintf('d', "DfsAllocateBlock: allocated block from fbv=%d, vector=%d\n", word, v);
@@ -232,8 +239,6 @@ uint32 DfsAllocateBlock() {
 //-----------------------------------------------------------------
 
 int DfsFreeBlock(uint32 blocknum) {
-	//Initializations
-	int i;
 	//Check if file system is valid
 	if (!sb.valid) {
 		printf("DfsAllocateBlock: Error cannot Allocate block if file system is invalid");
@@ -324,10 +329,9 @@ int DfsWriteBlock(uint32 blocknum, dfs_block *b){
 	for (i = 0; i < m; i++) {
 		bzero(diskb.data, DISK_BLOCKSIZE);
 		bcopy(&(b->data[i * DISK_BLOCKSIZE]), diskb.data, DISK_BLOCKSIZE);
-		if (DiskWrieBlock(blocknum * m + i, diskb.data) == DISK_FAIL) {
-			printf("DfsWriteBlock: Error could not write to disk") {
-				return DFS_FAIL;
-			}
+		if (DiskWriteBlock(blocknum * m + i, &diskb) == DISK_FAIL) {
+			printf("DfsWriteBlock: Error could not write to disk");
+			return DFS_FAIL;
 		}
 	}
 
@@ -389,7 +393,7 @@ uint32 DfsInodeOpen(char *filename) {
 	}
 
 	//Check if filename exists already, return handle
-	if (inhandle = DfsInodeFilenameExists(filename) != DFS_FAIL) {
+	if ((inhandle = DfsInodeFilenameExists(filename)) != DFS_FAIL) {
 		return inhandle;
 	//Otherwise, allocate new inode for filename and return new handle
 	} else {
@@ -428,7 +432,7 @@ int DfsInodeDelete(uint32 handle) {
 	int i; 
 	//uint32 inhandle;
 	dfs_block new_block;
-	uint32 indirect_table[sb.blocksize / 4];
+	uint32 indirect_table[sb.dfs_blocksize / 4];
 	//Check if file system is valid
 	if (!sb.valid) {
 		printf("DfsInodeDelete: Error cannot delete inode if file system is invalid\n");
@@ -451,8 +455,8 @@ int DfsInodeDelete(uint32 handle) {
 		}
 
 		//Free/Deallocate all blocks referenced by the indirect address
-		bcopy (new_block.data, (char *)indirect_table, sb.blocksize);
-		for (i = 0; i < (sb.blocksize / 4); i++) {
+		bcopy (new_block.data, (char *)indirect_table, sb.dfs_blocksize);
+		for (i = 0; i < (sb.dfs_blocksize / 4); i++) {
 			if (indirect_table[i] == 0) {}
 			else {
 				if (DfsFreeBlock(indirect_table[i]) == DFS_FAIL) {
@@ -503,10 +507,10 @@ int DfsInodeReadBytes(uint32 handle, void *mem, int start_byte, int num_bytes) {
 	//Initializations
 	//int i; 
 	dfs_block new_block;
-	//uint32 indirect_table[sb.blocksize / 4];
+	//uint32 indirect_table[sb.dfs_blocksize / 4];
 	int curr_byte = start_byte;
 	int bytes_read = 0;
-	int i, bytestoread;
+	int bytestoread;
 	uint32 filesys_blocknum;
 
 	//Check if file system is valid
@@ -524,14 +528,14 @@ int DfsInodeReadBytes(uint32 handle, void *mem, int start_byte, int num_bytes) {
 	//Read bytes from the file represented, starting at the start byte, going until num bytes
 	while (bytes_read < num_bytes) {
 		//get block number from translation
-		if ( filesys_blocknum = DfsInodeTranslateVirtualToFilesys(handle, curr_byte / sb.dfs_blocksize) == DFS_FAIL) {
+		if ( (filesys_blocknum = DfsInodeTranslateVirtualToFilesys(handle, curr_byte / sb.dfs_blocksize)) == DFS_FAIL) {
 			printf("DfsInodeReadBytes: Error trying to translate virt_blocknum to filesys_blocknum\n");
 			return DFS_FAIL;
 		}
 		//read block into a new dfs block
 		if (DfsReadBlock(filesys_blocknum, &new_block) == DFS_FAIL) {
 			printf("DfsInodeReadBytes: Error reading into dfs block\n");
-			return DFS_FAIL
+			return DFS_FAIL;
 		}
 
 		//Caluclate bytes being read from block into mem
@@ -543,7 +547,8 @@ int DfsInodeReadBytes(uint32 handle, void *mem, int start_byte, int num_bytes) {
 		}
 
 		//Copy bytes to read from dfs block into mem
-		bcopy(&(new_block.data[curr_byte % sb.blocksize]), &(mem[bytes_read]), bytestoread);
+		//bcopy(&(new_block.data[curr_byte % sb.dfs_blocksize]), &(mem[bytes_read]), bytestoread);
+		bcopy(&(new_block.data[curr_byte % sb.dfs_blocksize]), (char *) mem + bytes_read, bytestoread);
 
 		//update curr_byte and bytes_read
 		curr_byte += bytestoread;
@@ -569,7 +574,7 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
 	dfs_block new_block;
 	int curr_byte = start_byte;
 	int bytes_written = 0;
-	int i, bytestowrite;
+	int bytestowrite;
 	uint32 filesys_blocknum;
 	int virt_blocknum;
 
@@ -589,13 +594,13 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
 	while (bytes_written < num_bytes) {
 		virt_blocknum = curr_byte / sb.dfs_blocksize;
 		//Check if block needs to be allocated, file system block number will be 0 from virt translation
-		if ( filesys_blocknum = DfsInodeTranslateVirtualToFilesys(handle, virt_blocknum) == DFS_FAIL) {
+		if ( (filesys_blocknum = DfsInodeTranslateVirtualToFilesys(handle, virt_blocknum)) == DFS_FAIL) {
 			printf("DfsInodeWriteBytes: Error trying to translate virt_blocknum to filesys_blocknum\n");
 			return DFS_FAIL;
 		}
 		//Allocate if 0
 		if (filesys_blocknum == 0) {
-			if (filesys_blocknum = DfsInodeAllocateVirtualBlock(handle, virt_blocknum) == DFS_FAIL) {
+			if ((filesys_blocknum = DfsInodeAllocateVirtualBlock(handle, virt_blocknum)) == DFS_FAIL) {
 				printf("DfsInodeWriteBytes: Error Allocating Virtual block\n");
 				return DFS_FAIL;
 			}
@@ -614,7 +619,7 @@ int DfsInodeWriteBytes(uint32 handle, void *mem, int start_byte, int num_bytes) 
 			bytestowrite = num_bytes - bytes_written;
 		}
 
-		bcopy(&(mem[bytes_written]), &(new_block.data[curr_byte % sb.dfs_blocksize]), bytestowrite);
+		bcopy((char *) mem + bytes_written, &(new_block.data[curr_byte % sb.dfs_blocksize]), bytestowrite);
 
 		if (DfsWriteBlock(filesys_blocknum, &new_block) == DFS_FAIL) {
 			printf("DfsInodeWriteBytes: Error Writing dfs block back to disk after writing in from mem\n");
@@ -671,7 +676,6 @@ uint32 DfsInodeFilesize(uint32 handle) {
 
 uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
 	//Initializations
-	int i; 
 	dfs_block new_block;
 	uint32 indirect_table[sb.dfs_blocksize / 4];
 	
@@ -690,23 +694,23 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
 	//Decide if virt_blocknumber is in virt_block table or indirect
 	//Virt_block table allocate
 	if (virtual_blocknum < 10) {
-		if (inodes[handle].virt_blocks[virt_blocknum] = DfsAllocateBlock() == DFS_FAIL) {
+		if ((inodes[handle].virt_blocks[virtual_blocknum] = DfsAllocateBlock()) == DFS_FAIL) {
 			printf("DfsInodeAllocateVirtualBlock: Error Cannot allocate virtual block from v-table\n");
 			return DFS_FAIL;
 		}
-		return inodes[handle].virt_blocks[virt_blocknum];
+		return inodes[handle].virt_blocks[virtual_blocknum];
 	}
 	//indirect_table allocate
 	else {
 		//check if indirect_block has been allocated, if not allocate it
 		if (inodes[handle].indirect_block == 0) {
-			if (inodes[handle].indirect_block = DfsAllocateBlock() == DFS_FAIL) {
+			if ((inodes[handle].indirect_block = DfsAllocateBlock()) == DFS_FAIL) {
 				printf("DfsInodeAllocateVirtualBlock: Error Cannot allocate indirect_block\n");
 				return DFS_FAIL;
 			}
 			//0 disk for allocation
 			bzero(new_block.data, sb.dfs_blocksize);
-			if (DfsWriteBlock(nodes[handle].indirect_block, &new_block)) {
+			if (DfsWriteBlock(inodes[handle].indirect_block, &new_block)) {
 				printf("DfsInodeAllocateVirtualBlock: Error writing 0 to disk for indirect_addressing\n");
 				return DFS_FAIL;
 			}
@@ -717,22 +721,21 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
 			printf("DfsInodeAllocateVirtualBlock: Error could not read inderct block into dfs block for allocation\n");
 			return DFS_FAIL;
 		}
-		bcopy (new_block.data, (char *)indirect_table, sb.blocksize);
-		virt_blocknum -= 10
-		if (indirect_table[virt_blocknum] = DfsAllocateBlock() == DFS_FAIL) {
+		bcopy (new_block.data, (char *)indirect_table, sb.dfs_blocksize);
+		virtual_blocknum -= 10;
+		if ((indirect_table[virtual_blocknum] = DfsAllocateBlock()) == DFS_FAIL) {
 			printf("DfsInodeAllocateVirtualBlock: Error Cannot allocate indirect_table at virt_blocknum");
 			return DFS_FAIL;
 		}
 
 		//write back into disk
-		bcopy((char *)indirect_table, new_block.data, sb.blocksize);
-		if (DiskWrieBlock(inodes[handle].indirect_block, &new_block) == DFS_FAIL) {
+		bcopy((char *)indirect_table, new_block.data, sb.dfs_blocksize);
+		if (DfsWriteBlock(inodes[handle].indirect_block, &new_block) == DFS_FAIL) {
 			printf("DfsInodeAllocateVirtualBlock: Error writing updated indirect_adress table back to disk\n");
 			return DFS_FAIL;
 		}
 
-		return indirect_table[virt_blocknum];
-
+		return indirect_table[virtual_blocknum];
 	}
 }
 
@@ -746,9 +749,8 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
 
 uint32 DfsInodeTranslateVirtualToFilesys(uint32 handle, uint32 virtual_blocknum) {
 	//initializations
-	int i;
 	dfs_block new_block;
-	uint32 indirect_table[sb.blocksize / 4];
+	uint32 indirect_table[sb.dfs_blocksize / 4];
 
 	//Check if file system is valid
 	if (!sb.valid) {
@@ -777,14 +779,14 @@ uint32 DfsInodeTranslateVirtualToFilesys(uint32 handle, uint32 virtual_blocknum)
 				printf("DfsInodeTranslateVirtualToFilesys: Error could not read inderct block into dfs block for translation\n");
 				return DFS_FAIL;
 			}
-			bcopy (new_block.data, (char *)indirect_table, sb.blocksize);
+			bcopy (new_block.data, (char *)indirect_table, sb.dfs_blocksize);
 			//Go through indirect table, check if virt_blocknum matches and return the translation
-			virtual_blocknum -= 10
-			if (virt_blocknum >= (sb.dfs_blocksize/4)) {
+			virtual_blocknum -= 10;
+			if (virtual_blocknum >= (sb.dfs_blocksize/4)) {
 				printf("DfsInodeTranslateVirtualToFilesys: Error virt blocknum is out of index of indirect addressing\n");
 				return DFS_FAIL;
 			}
-			return indirect_table[virt_blocknum];
+			return indirect_table[virtual_blocknum];
 	}
 
 
@@ -792,3 +794,4 @@ uint32 DfsInodeTranslateVirtualToFilesys(uint32 handle, uint32 virtual_blocknum)
 	return DFS_FAIL;
 
 }
+
