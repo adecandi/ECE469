@@ -65,6 +65,8 @@ int FileOpen(char *filename, char *mode) {
 
 	//Mark its mode
 	//check read
+	//debug strncmp
+	printf("Type of mode = %s, strncp: %d", mode, dstrncmp("r", mode,)); 
 	if (dstrncmp("r", mode, 2) == 0) {
 		fds[i].mode = 1;
 	} 
