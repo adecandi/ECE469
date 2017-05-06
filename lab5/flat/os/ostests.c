@@ -52,11 +52,11 @@ void RunOSTests() {
 
   printf("***** Check @ 1240 into buffer (should be mellow)\n");
   DfsInodeReadBytes(fhandle, buffer, 1240, dstrlen(mellow) + 1);
-  printf("***** Found: %s", buffer);
+  printf("***** Found: %s\n", buffer);
 
   printf("***** Check @ 1250 into buffer (should be yellow)\n");
   DfsInodeReadBytes(fhandle, buffer, 1250, dstrlen(yellow) + 1);
-  printf("***** Found: %s", buffer);
+  printf("***** Found: %s\n", buffer);
 
   printf("++ Re-Writing jello on hello file @ random address 1240\n");
   printf("++ tests whether writes do a read on non algined writes\n");
