@@ -90,6 +90,8 @@ int FileOpen(char *filename, char *mode) {
 int FileClose(int handle) {
 	//Initializations:
 	//Check if file is already closed
+	int i;
+
 	if (!fds[i].inuse) {
 		printf("FileClose: Error File is already closed \n");
 		return FILE_FAIL; 
@@ -104,6 +106,7 @@ int FileClose(int handle) {
 int FileRead(int handle, void *mem, int num_bytes) {
 	//Initializations:
 	int filesize;
+	int i;
 	//Check if file is inuse
 	if (!fds[i].inuse) {
 		printf("FileRead: Error could not read file already closed \n");
@@ -131,13 +134,13 @@ int FileRead(int handle, void *mem, int num_bytes) {
 	//Get the filesize
 	if ( (filesize = DfsInodeFilesize(fds[handle].inode_handle)) == DFS_FAIL ) {
 		printf("FileRead: Error could not read file because the filesize could not be found from inode handle\n");
-		return FILE_FAIL:
+		return FILE_FAIL;
 	}
 
 	//Check if it reaches end of file
 	if (fds[i].pos + num_bytes > filesize) {
 		printf("Reading until the end of file\n");
-		num_bytes = filsize - fds[i].pos;
+		num_bytes = filesize - fds[i].pos;
 		fds[i].eof_flag = 1;
 	}
 
@@ -162,7 +165,7 @@ int FileRead(int handle, void *mem, int num_bytes) {
 //write num_bytes to the open file descriptor identified by handle. Return FILE_FAIL on failure, and the number of bytes written on success.
 int FileWrite(int handle, void *mem, int num_bytes) {
 	//Initializations:
-	int filesize;
+	int filesize, i;
 	//Check if file is inuse
 	if (!fds[i].inuse) {
 		printf("FileWrite: Error could not write file already closed \n");
@@ -190,13 +193,13 @@ int FileWrite(int handle, void *mem, int num_bytes) {
 	//Get the filesize
 	if ( (filesize = DfsInodeFilesize(fds[handle].inode_handle)) == DFS_FAIL ) {
 		printf("FileWrite: Error could not write file because the filesize could not be found from inode handle\n");
-		return FILE_FAIL:
+		return FILE_FAIL;
 	}
 
 	//Check if it reaches end of file
 	if (fds[i].pos + num_bytes > filesize) {
 		printf("writing until the end of file\n");
-		num_bytes = filsize - fds[i].pos;
+		num_bytes = filesize - fds[i].pos;
 		fds[i].eof_flag = 1;
 	}
 
@@ -221,7 +224,7 @@ int FileWrite(int handle, void *mem, int num_bytes) {
 //FILE_SEEK_SET (seek relative to the beginning of the file), and FILE_SEEK_END (seek relative to the end of the file). Any seek operation will clear the eof flag.
 int FileSeek(int handle, int num_bytes, int from_where) {
 	//Initializations:
-	int filesize;
+	int filesize, i;
 	//Check if file is inuse
 	if (!fds[i].inuse) {
 		printf("FileSeek: Error could not seek file already closed \n");
@@ -237,12 +240,12 @@ int FileSeek(int handle, int num_bytes, int from_where) {
 	fds[handle].eof_flag = 0;
 	if ( (filesize = DfsInodeFilesize(fds[handle].inode_handle)) == DFS_FAIL ) {
 		printf("FileSeek: Error could not seek file because the filesize could not be found from inode handle\n");
-		return FILE_FAIL:
+		return FILE_FAIL;
 	}
 
 	//SEEK SET
 	if (from_where == FILE_SEEK_SET) {
-		if ((num_bytes < 0) || (num_bytes > filsize)) {
+		if ((num_bytes < 0) || (num_bytes > filesize)) {
 			printf("FileSeek: Error Seek Set is out of bounds\n");
 			return FILE_FAIL;
 		}
@@ -251,7 +254,7 @@ int FileSeek(int handle, int num_bytes, int from_where) {
 
 	//SEEK CUR
 	if (from_where == FILE_SEEK_CUR) {
-		if ((fds[hanle].pos + num_bytes > filesize) || (fds[handle].pos + num_bytes < 0)) {
+		if ((fds[handle].pos + num_bytes > filesize) || (fds[handle].pos + num_bytes < 0)) {
 			printf("FileSeek: Error Seek Cur is out of bounds\n");
 			return FILE_FAIL;
 		}

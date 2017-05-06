@@ -67,7 +67,7 @@ void main (int argc, char *argv[])
   // boot record is all zeros in the first physical block, and superblock structure goes into the second physical block
 
   Printf("Disk created.\n");
-  Printf("Sizeof inode: %d\n", sizeof(dfs_inode));
+  Printf("Sizeof inode: %d, inode_st: %d, inode_end: %d\n", sizeof(dfs_inode), sb.dfs_start_block_inodes, sb.dfs_start_block_fbv);
   Printf("Disk blocksize: %d FS blocksize: %d\n", diskblocksize, sb.dfs_blocksize);
 
   //Write them in as 0
@@ -111,12 +111,12 @@ int FdiskWriteBlock(uint32 blocknum, dfs_block *b) {
   disk_block db;
   int i, m;
   m = sb.dfs_blocksize / diskblocksize;
-  //Printf("Starting FdiskWriteBlock. blocknum=%d. m=%d\n", blocknum, m);
+  Printf("Starting FdiskWriteBlock. blocknum=%d. m=%d\n", blocknum, m);
   for (i = 0; i < m; i++) {
     bcopy(&(b->data[i * diskblocksize]), db.data, diskblocksize);
     Printf("Writing to disk block: %d\n", blocknum * m + i);
     if (disk_write_block(blocknum * m + i, &db) == DISK_FAIL) {
-      //Printf("Unable to write physical block to disk.\n");
+      Printf("Unable to write physical block to disk.\n");
       return DISK_FAIL;
     }
   }
