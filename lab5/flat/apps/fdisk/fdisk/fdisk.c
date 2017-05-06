@@ -102,7 +102,7 @@ void main (int argc, char *argv[])
   FdiskWriteBlock(0, &new_block);
 
 
-  Printf("fdisk (%d): Formatted DFS disk for %d bytes. sb.valid=%d.\n", getpid(), disksize, sb.valid);
+  Printf("fdisk (%d): Formatted DFS disk for %d bytes.\n", getpid(), disksize);
 }
 
 int FdiskWriteBlock(uint32 blocknum, dfs_block *b) {

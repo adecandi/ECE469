@@ -1,0 +1,12 @@
+LAB 5 Notes for Nadav
+
+Ok here is where we are at. fdisk.c should be fully working. You can use the blockprint scripts in the scripts
+folder to test them more, but they look perfect now. 
+
+To test do a make clean in ostests, then fdisk, then os. Then make os, make fdisk, make run fdisk, make ostests,
+then make run ostests.
+
+This will have fdisk.c make a disk, and then run the ostests to test our functionality. Currently it looks like
+we are stuck in DfsInodeWriteBytes. But that's where I left off. I was able to open a new inode and allocate it
+fine. There was a number of changes here and there, but you can can keep going from there. If you want debug
+statements use dbprintf with Q as the character code. That's what I have been using. 
