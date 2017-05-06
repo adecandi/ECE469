@@ -198,7 +198,6 @@ int DfsCloseFileSystem() {
 
 uint32 DfsAllocateBlock() {
 	//Initializations:
-	int word;
 	int bitnum;
 	int i;
 	uint32 v; //vector
@@ -730,6 +729,9 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
 	//Virt_block table allocate
 	if (virtual_blocknum < 10) {
 		dbprintf('Q', "DfsInodeAllocateVirtualBlock: virt_block table.\n");
+		if (inodes[handle].virt_blocks[virtual_blocknum] != 0) { 
+			return inodes[handle].virt_blocks[virtual_blocknum];
+		}
 		if ((inodes[handle].virt_blocks[virtual_blocknum] = DfsAllocateBlock()) == DFS_FAIL) {
 			printf("DfsInodeAllocateVirtualBlock: Error Cannot allocate virtual block from v-table\n");
 			return DFS_FAIL;
@@ -749,7 +751,7 @@ uint32 DfsInodeAllocateVirtualBlock(uint32 handle, uint32 virtual_blocknum) {
 			dbprintf('Q', "DfsInodeAllocateVirtualBlock: bzero and DfsWriteBlock.\n");
 			//0 disk for allocation
 			bzero(new_block.data, sb.dfs_blocksize);
-			if (DfsWriteBlock(inodes[handle].indirect_block, &new_block)) {
+			if (DfsWriteBlock(inodes[handle].indirect_block, &new_block) == DFS_FAIL) {
 				printf("DfsInodeAllocateVirtualBlock: Error writing 0 to disk for indirect_addressing. Block=%d.\n", inodes[handle].indirect_block);
 				return DFS_FAIL;
 			}

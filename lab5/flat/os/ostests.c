@@ -6,77 +6,68 @@
 #include "misc.h"
 
 void RunOSTests() {
-	int fhandle;
-	char mellow[] = "mellow";
-	char yellow[] = "yellow";
-	char jello[] = "jello";
-	char fellow[] = "fellow";
+	int inode_file;
+	char string1[] = "new york";
+	char string2[] = "dallas";
+	char string3[] = "seattle";
+	char string4[] = "west lafayette";
 
   char buffer[512];
-  int temp;
 
-  printf("Starting RunOSTests function\n");
+  printf("Starting RunOSTests function.\n");
 
-	if(DfsInodeFilenameExists("hello") == DFS_FAIL) {
-		printf("\n================= Start ostests (first run)\n");
-		printf("--- Initializing hello file for testing\n");
-		printf("--- run this program again to see persistence behaviour\n");
-  	printf("- Hello file did not exist\n");
-  	printf("+ Creating hello file\n");
-  	fhandle = DfsInodeOpen("hello");
+	if(DfsInodeFilenameExists("cities") == DFS_FAIL) {
+		printf("\nOSTests - Checking for cities file.\n");
+		printf("\tCities file not found, creating.\n");
+  	inode_file = DfsInodeOpen("cities");
   	
-  	printf("**** Writing mellow on hello file @ random address 1240\n");
-	  DfsInodeWriteBytes(fhandle, mellow, 1240, dstrlen(mellow) + 1);
-	  printf("**** Call DfsInodeFileSize function: returned %d\n", DfsInodeFilesize(fhandle));
+  	printf("\tWriting new york to file at address 800\n");
+	  DfsInodeWriteBytes(inode_file, string1, 800, dstrlen(string1) + 1);
+	  printf("\tDfsInodeFileSize function returned %d\n", DfsInodeFilesize(inode_file));
 
-	  printf("**** Writing yellow on hello file @ random address 1250\n");
-	  DfsInodeWriteBytes(fhandle, yellow, 1250, dstrlen(yellow) + 1);
-	  printf("**** Call DfsInodeFileSize function: returned %d\n", DfsInodeFilesize(fhandle));
+	  printf("\tWriting dallas to file at address 820\n");
+	  DfsInodeWriteBytes(inode_file, string2, 825, dstrlen(string2) + 1);
+    printf("\tDfsInodeFileSize function returned %d\n", DfsInodeFilesize(inode_file));
 
-	  printf("---- In 512 DFS block size; 5160 byte will be in indirect block addressed\n");
-	  printf("**** Writing fellow on hello file @ probble indirected addressed (5120 + 40) \n");
-	  DfsInodeWriteBytes(fhandle, fellow, 5160, dstrlen(fellow) + 1);
-	  printf("**** Call DfsInodeFileSize function: returned %d\n", DfsInodeFilesize(fhandle));
-		printf("================= End ostests\n\n");
+	  printf("\tWriting seattle to file at address 10290 (testing indirect block addressing).\n");
+	  DfsInodeWriteBytes(inode_file, string3, 10290, dstrlen(string3) + 1);
+	  printf("\tDfsInodeFileSize function returned %d\n", DfsInodeFilesize(inode_file));
+		printf("OSTests complete.\n\n");
 	  return;
   }
   else {
-		printf("\n================= Start ostests (second run)\n");
-  	printf("+ Hello file did exist\n");
-  	printf("++ Reopening hello file\n");
-  	fhandle = DfsInodeOpen("hello");	
+		printf("\nOSTests - Checking for cities file\n");
+  	inode_file = DfsInodeOpen("cities");	
   }
-  if(DfsInodeFilenameExists("hello") == fhandle) {
-  	printf("++ Researched for hello and found same hello file, filehandle:%d\n", fhandle);
+  if(DfsInodeFilenameExists("cities") == inode_file) {
+  	printf("\tCities file found, inode:%d\n", inode_file);
   }
 
-  printf("***** Check @ 1240 into buffer (should be mellow)\n");
-  DfsInodeReadBytes(fhandle, buffer, 1240, dstrlen(mellow) + 1);
-  printf("***** Found: %s\n", buffer);
+  printf("\tCheck addr 800, should be new york\n");
+  DfsInodeReadBytes(inode_file, buffer, 800, dstrlen(string1) + 1);
+  printf("\t\tRead: %s\n", buffer);
 
-  printf("***** Check @ 1250 into buffer (should be yellow)\n");
-  DfsInodeReadBytes(fhandle, buffer, 1250, dstrlen(yellow) + 1);
-  printf("***** Found: %s\n", buffer);
+  printf("\tCheck addr 820, should be dallas\n");
+  DfsInodeReadBytes(inode_file, buffer, 820, dstrlen(string2) + 1);
+  printf("\t\tRead: %s\n", buffer);
 
-  printf("++ Re-Writing jello on hello file @ random address 1240\n");
-  printf("++ tests whether writes do a read on non algined writes\n");
-	DfsInodeWriteBytes(fhandle, jello, 1240, dstrlen(jello) + 1);
-	printf("++ Call DfsInodeFileSize function: returned %d\n", DfsInodeFilesize(fhandle));
+  printf("\tWriting over the line at address 800 to test non-aligned writes.\n");
+	DfsInodeWriteBytes(inode_file, string4, 800, dstrlen(string4) + 1);
+	printf("\tDfsInodeFileSize function returned: %d\n", DfsInodeFilesize(inode_file));
 
-  printf("***** Check @ 1250 into buffer (should be yellow)\n");
-  DfsInodeReadBytes(fhandle, buffer, 1250, dstrlen(yellow) + 1);
-  printf("***** Found: %s\n", buffer);
+  printf("\tCheck addr 820, should be dallas\n");
+  DfsInodeReadBytes(inode_file, buffer, 820, dstrlen(string2) + 1);
+  printf("\t\tRead: %s\n", buffer);
 
-  printf("***** Check @ 1240 into buffer (should be jello)\n");
-  DfsInodeReadBytes(fhandle, buffer, 1240, dstrlen(jello) + 1);
-  printf("***** Found: %s\n", buffer);
+  printf("\tCheck addr 800, should be west lafayette\n");
+  DfsInodeReadBytes(inode_file, buffer, 800, dstrlen(string4) + 1);
+  printf("\t\tRead: %s\n", buffer);
 
-  printf("---- In 512 DFS block size; 5160 byte will be in indirect block addressed\n");
-  printf("***** Check @ 5160 into buffer (should be fellow)\n");
-  DfsInodeReadBytes(fhandle, buffer, 5160, dstrlen(fellow) + 1);
-  printf("***** Found: %s\n", buffer);
+  printf("\tCheck addr 10290, should be seattle (testing read of indirect block addressing.\n");
+  DfsInodeReadBytes(inode_file, buffer, 10290, dstrlen(string3) + 1);
+  printf("\t\tRead: %s\n", buffer);
 
-  printf("---- Deleting hello file\n");
-  DfsInodeDelete(fhandle);
-	printf("================= End ostests\n\n");
+  printf("\tDeleting cities file\n");
+  DfsInodeDelete(inode_file);
+	printf("End ostests.\n\n");
 }
